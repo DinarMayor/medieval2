@@ -1,0 +1,90 @@
+"InstallScript"
+{
+	"Registry"
+	{
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War\\Mods\\Official\\0000Americas"
+		{
+			"string"
+			{
+				"Author"				"SEGA"
+				"ConfigFile"				""
+				"DisplayName"				"Americas"
+				"DistributionSource"			"steam"
+				"FullName"				"Medieval II Total War: Americas"
+				"GameExe"				"kingdoms.exe"
+				"Language"				"english"
+				"Path"					"mods/americas"
+				"Version"				"1.05.000"
+			}
+		}
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War\\Mods\\Official\\0001Britannia"
+		{
+			"string"
+			{
+				"Author"				"SEGA"
+				"ConfigFile"				""
+				"DisplayName"				"Britannia"
+				"DistributionSource"			"steam"
+				"FullName"				"Medieval II Total War: Britannia"
+				"GameExe"				"kingdoms.exe"
+				"Language"				"english"
+				"Path"					"mods/british_isles"
+				"Version"				"1.05.000"
+			}
+		}
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War\\Mods\\Official\\0002Crusades"
+		{
+			"string"
+			{
+				"Author"				"SEGA"
+				"ConfigFile"				""
+				"DisplayName"				"Crusades"
+				"DistributionSource"			"steam"
+				"FullName"				"Medieval II Total War: Crusades"
+				"GameExe"				"kingdoms.exe"
+				"Language"				"english"
+				"Path"					"mods/crusades"
+				"Version"				"1.05.000"
+			}
+		}
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War\\Mods\\Official\\0003Teutonic"
+		{
+			"string"
+			{
+				"Author"				"SEGA"
+				"ConfigFile"				""
+				"DisplayName"				"Teutonic"
+				"DistributionSource"			"steam"
+				"FullName"				"Medieval II Total War: Teutonic"
+				"GameExe"				"kingdoms.exe"
+				"Language"				"english"
+				"Path"					"mods/teutonic"
+				"Version"				"1.05.000"
+			}
+		}
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War : Kingdoms : Americas\\1.03.000"
+		{
+		}
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War : Kingdoms : Americas"
+		{
+		}
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War : Kingdoms : Britannia\\1.03.000"
+		{
+		}
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War : Kingdoms : Britannia"
+		{
+		}
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War : Kingdoms : Crusades\\1.03.000"
+		{
+		}
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War : Kingdoms : Crusades"
+		{
+		}
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War : Kingdoms : Teutonic\\1.03.000"
+		{
+		}
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War : Kingdoms : Teutonic"
+		{
+		}
+	}
+}

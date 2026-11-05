@@ -1,0 +1,202 @@
+<Config>
+   <Track>
+      <!-- default track configuation -->
+      <Position>
+         <X>
+            <Colour/>
+            <!-- colour of spline -->
+            <Index>0</Index>
+            <Scale>-1000</Scale>
+            <Value/>
+            <InType>0</InType>
+            <!-- default tangent in type for new knots -->
+            <OutType>0</OutType>
+            <!-- default tangent out type for new knots -->
+         </X>
+         <Y>
+            <Colour/>
+            <Index>1</Index>
+            <Scale>-1000</Scale>
+            <Value/>
+            <InType>0</InType>
+            <OutType>0</OutType>
+         </Y>
+         <Z>
+            <Colour/>
+            <Index>2</Index>
+            <Scale>-1000</Scale>
+            <Value/>
+            <InType>0</InType>
+            <OutType>0</OutType>
+         </Z>
+      </Position>
+      <Focus>
+         <X>
+            <Colour/>
+            <Index>3</Index>
+            <Scale>-1000</Scale>
+            <Value/>
+            <InType>0</InType>
+            <OutType>0</OutType>
+         </X>
+         <Y>
+            <Colour/>
+            <Index>4</Index>
+            <Scale>-1000</Scale>
+            <Value/>
+            <InType>0</InType>
+            <OutType>0</OutType>
+         </Y>
+         <Z>
+            <Colour/>
+            <Index>5</Index>
+            <Scale>-1000</Scale>
+            <Value/>
+            <InType>0</InType>
+            <OutType>0</OutType>
+         </Z>
+      </Focus>
+      <FOV>
+         <Colour/>
+         <Index>6</Index>
+         <Scale>-90</Scale>
+         <Value/>
+         <InType>0</InType>
+         <OutType>0</OutType>
+      </FOV>
+      <Roll>
+         <Colour/>
+         <Index>7</Index>
+         <Scale>-360</Scale>
+         <Value/>
+         <InType>0</InType>
+         <OutType>0</OutType>
+      </Roll>
+      <NoiseAmp>
+         <Colour/>
+         <Index>8</Index>
+         <Scale>-100</Scale>
+         <Value/>
+         <InType>0</InType>
+         <OutType>0</OutType>
+      </NoiseAmp>
+      <NoiseFreq>
+         <Colour/>
+         <Index>9</Index>
+         <Scale>-100</Scale>
+         <Value/>
+         <InType>0</InType>
+         <OutType>0</OutType>
+      </NoiseFreq>
+      <RollNoiseAmp>
+         <Colour/>
+         <Index>10</Index>
+         <Scale>-100</Scale>
+         <Value/>
+         <InType>0</InType>
+         <OutType>0</OutType>
+      </RollNoiseAmp>
+      <RollNoiseFreq>
+         <Colour/>
+         <Index>11</Index>
+         <Scale>-100</Scale>
+         <Value/>
+         <InType>0</InType>
+         <OutType>0</OutType>
+      </RollNoiseFreq>
+      <NoiseX/>
+      <!-- noise factors for x axis -->
+      <NoiseY/>
+      <NoiseZ/>
+      <RollNoiseF/>
+      <RollNoiseF2/>
+      <NoiseScale/>
+      <NoiseFreqScale/>
+      <RollNoiseScale/>
+      <RollNoiseFreqScale/>
+   </Track>
+   <Manager>
+      <PIP>
+         <Enabled>true</Enabled>
+         <!-- enabled? -->
+         <SurfaceSize/>
+         <!-- size of texture surface -->
+         <Color/>
+         <Size>0.5</Size>
+         <!-- size -->
+         <X/>
+         <!-- screen position -->
+         <Y/>
+      </PIP>
+   </Manager>
+   <EditCam>
+      <Speed>
+         <Move>50.0</Move>
+         <!-- move rate of camera -->
+         <MoveInc>1.25</MoveInc>
+         <!-- move accel rate -->
+         <MoveMin>1</MoveMin>
+         <!-- move minimum speed -->
+         <MoveMax>200</MoveMax>
+         <!-- move maximum speed -->
+         <Look>5</Look>
+         <!-- look rate -->
+         <LookInc>1.25</LookInc>
+         <!-- look accel rate -->
+         <LookMin>0.1</LookMin>
+         <!-- look minimum rate -->
+         <LookMax>10</LookMax>
+         <!-- look maximum rate -->
+         <AccelRate>5.0</AccelRate>
+         <!-- accelleration rate of movement -->
+         <AccelSpeed>50.0</AccelSpeed>
+         <!-- accelleration init speed -->
+         <FOVSpeed>50.0</FOVSpeed>
+         <!-- fov speed -->
+      </Speed>
+      <Camera>
+         <!-- initial position of edit cam -->
+         <Pos/>
+         <Focus/>
+         <Near/>
+         <Far/>
+         <FOV/>
+         <Roll/>
+         <Aspect/>
+      </Camera>
+      <Controls>
+         <!-- size of 3d gizmos -->
+         <GizmoScale/>
+         <KnotScale/>
+         <CtrlScale/>
+         <HoverKnotScale/>
+         <SelectedKnotScale/>
+      </Controls>
+   </EditCam>
+   <ViewCam>
+      <Speed>
+         <Move>50.0</Move>
+         <!-- move rate of camera -->
+         <MoveInc>1.25</MoveInc>
+         <!-- move accel rate -->
+         <MoveMin>1</MoveMin>
+         <!-- move minimum speed -->
+         <MoveMax>200</MoveMax>
+         <!-- move maximum speed -->
+         <Look>5</Look>
+         <!-- look rate -->
+         <LookInc>1.25</LookInc>
+         <!-- look accel rate -->
+         <LookMin>0.1</LookMin>
+         <!-- look minimum rate -->
+         <LookMax>10</LookMax>
+         <!-- look maximum rate -->
+         <AccelRate>5.0</AccelRate>
+         <!-- accelleration rate of movement -->
+         <AccelSpeed>50.0</AccelSpeed>
+         <!-- accelleration init speed -->
+         <FOVSpeed>50.0</FOVSpeed>
+         <!-- fov speed -->
+      </Speed>
+   </ViewCam>
+</Config>

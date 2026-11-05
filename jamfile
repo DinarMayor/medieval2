@@ -1,0 +1,5 @@
+SubDir TOP ;
+
+SubIncludeOnce TOP data ;
+SubIncludeOnce TOP src : core game cine ;
+

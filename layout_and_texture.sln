@@ -1,0 +1,99 @@
+Microsoft Visual Studio Solution File, Format Version 8.00
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "layout_and_texture", "src\tools\LayoutAndTexture\layout_and_texture.vcproj", "{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}"
+	ProjectSection(ProjectDependencies) = postProject
+		{FB808350-AA2D-479E-A019-7B10BC107D6F} = {FB808350-AA2D-479E-A019-7B10BC107D6F}
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7} = {B449F4B8-6925-472E-9EC9-BD82CAD001A7}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "system", "src\core\system\system.vcproj", "{FB808350-AA2D-479E-A019-7B10BC107D6F}"
+	ProjectSection(ProjectDependencies) = postProject
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ca_libs", "src\core\ca_libs\ca_libs.vcproj", "{B449F4B8-6925-472E-9EC9-BD82CAD001A7}"
+	ProjectSection(ProjectDependencies) = postProject
+		{FB808350-AA2D-479E-A019-7B10BC107D6F} = {FB808350-AA2D-479E-A019-7B10BC107D6F}
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SourceCodeControl) = preSolution
+		SccNumberOfProjects = 4
+		SccLocalPath0 = .
+		CanCheckoutShared = true
+		SolutionUniqueID = {29A73C65-A310-41EA-807F-E58927AD5C2B}
+		SccProjectUniqueName1 = src\\core\\system\\system.vcproj
+		SccLocalPath1 = .
+		CanCheckoutShared = true
+		SccProjectFilePathRelativizedFromConnection1 = src\\core\\system\\
+		SccProjectUniqueName2 = src\\core\\ca_libs\\ca_libs.vcproj
+		SccLocalPath2 = .
+		CanCheckoutShared = true
+		SccProjectFilePathRelativizedFromConnection2 = src\\core\\ca_libs\\
+		SccProjectUniqueName3 = src\\tools\\LayoutAndTexture\\layout_and_texture.vcproj
+		SccLocalPath3 = src\\tools\\LayoutAndTexture
+		CanCheckoutShared = true
+	EndGlobalSection
+	GlobalSection(SolutionConfiguration) = preSolution
+		Debug = Debug
+		Debug - DLL = Debug - DLL
+		Hybrid = Hybrid
+		Profile = Profile
+		Release = Release
+		Release - DLL = Release - DLL
+		Release-DesyncTest = Release-DesyncTest
+		Retail = Retail
+	EndGlobalSection
+	GlobalSection(ProjectConfiguration) = postSolution
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Debug.ActiveCfg = Debug|Win32
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Debug.Build.0 = Debug|Win32
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Debug - DLL.ActiveCfg = Debug|Win32
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Debug - DLL.Build.0 = Debug|Win32
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Hybrid.ActiveCfg = Release|Win32
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Hybrid.Build.0 = Release|Win32
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Profile.ActiveCfg = Release|Win32
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Profile.Build.0 = Release|Win32
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Release.ActiveCfg = Release|Win32
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Release.Build.0 = Release|Win32
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Release - DLL.ActiveCfg = Release|Win32
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Release - DLL.Build.0 = Release|Win32
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Release-DesyncTest.ActiveCfg = Release|Win32
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Release-DesyncTest.Build.0 = Release|Win32
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Retail.ActiveCfg = Release|Win32
+		{0259B488-B0C5-42AE-A6CA-96DCE6EB8EF2}.Retail.Build.0 = Release|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Debug.ActiveCfg = Debug|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Debug.Build.0 = Debug|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Debug - DLL.ActiveCfg = Debug - DLL|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Debug - DLL.Build.0 = Debug - DLL|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Hybrid.ActiveCfg = Release-DesyncTest|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Hybrid.Build.0 = Release-DesyncTest|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Profile.ActiveCfg = Profile|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Profile.Build.0 = Profile|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Release.ActiveCfg = Release|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Release.Build.0 = Release|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Release - DLL.ActiveCfg = Release - DLL|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Release - DLL.Build.0 = Release - DLL|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Release-DesyncTest.ActiveCfg = Release-DesyncTest|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Release-DesyncTest.Build.0 = Release-DesyncTest|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Retail.ActiveCfg = Retail|Win32
+		{FB808350-AA2D-479E-A019-7B10BC107D6F}.Retail.Build.0 = Retail|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Debug.ActiveCfg = Debug|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Debug.Build.0 = Debug|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Debug - DLL.ActiveCfg = Debug - DLL|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Debug - DLL.Build.0 = Debug - DLL|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Hybrid.ActiveCfg = Hybrid|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Hybrid.Build.0 = Hybrid|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Profile.ActiveCfg = Profile|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Profile.Build.0 = Profile|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Release.ActiveCfg = Release|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Release.Build.0 = Release|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Release - DLL.ActiveCfg = Release - DLL|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Release - DLL.Build.0 = Release - DLL|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Release-DesyncTest.ActiveCfg = Release-DesyncTest|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Release-DesyncTest.Build.0 = Release-DesyncTest|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Retail.ActiveCfg = Retail|Win32
+		{B449F4B8-6925-472E-9EC9-BD82CAD001A7}.Retail.Build.0 = Retail|Win32
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+	EndGlobalSection
+	GlobalSection(ExtensibilityAddIns) = postSolution
+	EndGlobalSection
+EndGlobal

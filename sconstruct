@@ -1,0 +1,3456 @@
+#
+# Medieval 2 Kingdoms build script
+#
+
+import sys, os, os.path, glob, shutil, re, marshal, stat, filecmp
+from pprint import pprint
+
+import smtplib, email
+from email.MIMEImage import MIMEImage
+from email.MIMEMultipart import MIMEMultipart
+from email.MIMEText import MIMEText
+from email.MIMEMessage import MIMEMessage
+
+import time
+
+env = Environment(ENV = os.environ)
+env['ENV']['MSVCNT'] = "1"
+env['ENV']['MTW2Setup'] = os.getcwd()
+
+env.Help('''Usage: scons <target>''')
+
+#------------------------------------------------------------------------------
+# Python notes
+# - indentation controls code blocks.  Indentation should use spaces.
+# - normally '\' must be expressed as '\\' in code ie must use escape sequence.  If you prepend r to a string the escape \ is no longer needed, eg r'data\animations'
+# - in python + concatenates strings
+
+
+#------------------------------------------------------------------------------
+#This section creates variables and extracts command line arguments from the builders specified in Luntbuild.  Each builder will call Scons just once.  Scon returns 0 if succesful.
+#------------------------------------------------------------------------------
+                   
+#This will allow us to create quick installers for downloadable campaigns if we already have an EFIGS built and sitting in the working directory
+SKUPostBuildOnly = ARGUMENTS.get('skuPostBuildOnly', '0')  != '0'
+SKUNoPostBuild   = ARGUMENTS.get('skuNoPostBuild', '0')    != '0'
+SKUName          = ARGUMENTS.get('skuName', '')
+SKUIndex         = 0
+SKUExe           = 'medieval2_r.exe'
+
+#SKULocalised     = []     #global array of assets localised that need restoring
+#SKULocalisedMods = [[]]     #global array of mod assets localised that need restoring
+                  
+Update2          = r'Z:\Builds\Medieval 2\Patch\Update 2\bld-medieval2-update2-84_FINAL RC_260407\artifacts'
+Update3          = r'Z:\Builds\Medieval 2\Patch\Update 2.1\bld-medieval2-update2.1-31\artifacts'
+AddInstallFiles  = r'Z:\Builds\Medieval 2\Kingdoms\AdditionalInstallerFiles'
+AddInstallFilesMod = r'Z:\Builds\Medieval 2\Kingdoms\AdditionalInstallerFilesMods'
+InstalledUpdate2 = r'Z:\Builds\Medieval 2\Installed_patched retail_EFIGS_RPC_J_Update2\Update2'
+
+artBuild        = ARGUMENTS.get('artBuild', '0')    != '0'
+
+buildVersion    = ARGUMENTS.get('buildVersion', 'development')
+ModBuild        = ARGUMENTS.get('modBuild', '0')      != '0'
+modPath         = ARGUMENTS.get('modPath', '')
+modName         = ARGUMENTS.get('modName', modPath.replace('\\', '-'))
+buildNumber     = None
+m = re.match(r'^.*-([0-9.]+)$', buildVersion)
+if m:
+    buildNumber = m.group(1)
+
+artifactsDir    = ARGUMENTS.get('artifactsDir', 'artifacts')
+modArtifactsDir = os.path.join(artifactsDir, modPath)
+publishDir      = ARGUMENTS.get('publishDir', '.')
+
+releaseVersion  = ARGUMENTS.get('releaseVersion', '')
+
+toolsPath       = '.\\bin\\'
+gamePath        = '.\\bin\\'
+if artBuild:
+    toolsPath = ''
+    gamePath = '.\\'
+
+buildRepository = ARGUMENTS.get('buildRepository', r'\\ZEPPELIN\root\Builds\Medieval 2')
+
+UseIncredibuild = ARGUMENTS.get('incredibuild', '0')    != '0'
+Rebuild         = ARGUMENTS.get('rebuild', '0')         != '0'
+BuildData       = ARGUMENTS.get('buildData', '0')       != '0'
+
+LowQuality      = ARGUMENTS.get('lowQuality', '0')      != '0'
+packSound       = ARGUMENTS.get('packSound', '1')       != '0'
+
+DemoBuild       = ARGUMENTS.get('demoBuild', '0')      != '0'
+if DemoBuild:
+    env['ENV']['CFG_MTW2_DEMO'] = 1
+    env['ENV']['CL'] = '/DCFG_MTW2_DEMO'
+
+p4port          = ARGUMENTS.get('p4port',    None)
+p4client        = ARGUMENTS.get('p4client',  None)
+p4user          = ARGUMENTS.get('p4user',    None)
+p4passwd        = ARGUMENTS.get('p4passwd',  None)
+
+Debug           = ARGUMENTS.get('debug', '0') != '0'
+Submit          = ARGUMENTS.get('submit', '1') != '0'
+submitWatermark = ARGUMENTS.get('submitWatermark', '0') != '0'
+updateWatermark = ARGUMENTS.get('updateWatermark', '0') != '0' or submitWatermark
+
+RemoveDuplicates = ARGUMENTS.get('removeDuplicates', '0') != '0'
+FailOnBadBlocks = ARGUMENTS.get('failOnBadBlocks', '1') != '0'
+SkipBlockCheck  = ARGUMENTS.get('skipBlockCheck', '0') != '0'
+
+noCache         = ARGUMENTS.get('noCache', '0') != '0'
+
+installerPassword = ARGUMENTS.get('installerPassword', '')
+
+Language        = ARGUMENTS.get('language',  None)
+LanguageId = 'English'
+if Language:
+    LanguageId = Language
+    
+PatchInstaller  = ARGUMENTS.get('patchInstaller', 'patch')
+PatchVersion    = ARGUMENTS.get('patchVersion', '_1_02')
+ReferenceVersion= ARGUMENTS.get('referenceVersion', r'.\installed_reference')
+FoldersToDiff   = [
+                   (r'data\animations', '-e*.cas;*.evt'),   #-e says exclude
+                   (r'data\cursors', ''), 
+                   (r'data\fmv', '-r'),                     #-r recurse ie diff all subfolders
+                   (r'data\sounds', ''), 
+                   (r'data\world', '-r'), 
+                   (r'packs', '')
+                  ]
+FoldersToDiffNL = [
+                   (r'mods\americas\data\animations', '-e*.cas;*.evt'),   #-e says exclude
+                   (r'mods\americas\data\cursors', ''), 
+                   (r'mods\americas\data\fmv', '-r'), 
+                   (r'mods\americas\packs', '-elocalized.pack'),
+                   (r'mods\british_isles\data\animations', '-e*.cas;*.evt'),   #-e says exclude
+                   (r'mods\british_isles\data\cursors', ''), 
+                   (r'mods\british_isles\data\fmv', '-r'), 
+                   (r'mods\british_isles\packs', '-elocalized.pack'),
+                   (r'mods\crusades\data\animations', '-e*.cas;*.evt'),   #-e says exclude
+                   (r'mods\crusades\data\cursors', ''), 
+                   (r'mods\crusades\data\fmv', '-r'), 
+                   (r'mods\crusades\packs', '-elocalized.pack'),
+                   (r'mods\teutonic\data\animations', '-e*.cas;*.evt'),   #-e says exclude
+                   (r'mods\teutonic\data\cursors', ''), 
+                   (r'mods\teutonic\data\fmv', '-r'), 
+                   (r'mods\teutonic\packs', '-elocalized.pack')
+                  ]                    
+FoldersToDiffLoc = [
+                   (r'mods\americas\data\sounds', ''), 
+                   (r'mods\americas\packs', '-edata_?.pack;data.pack'),              #exclude all packs except localized.pack (hopefully)
+                   (r'mods\british_isles\data\sounds', ''), 
+                   (r'mods\british_isles\packs', '-edata_?.pack;data.pack'),              #exclude all packs except localized.pack (hopefully)
+                   (r'mods\crusades\data\sounds', ''), 
+                   (r'mods\crusades\packs', '-edata_?.pack;data.pack'),              #exclude all packs except localized.pack (hopefully)
+                   (r'mods\teutonic\data\sounds', ''), 
+                   (r'mods\teutonic\packs', '-edata_?.pack;data.pack')              #exclude all packs except localized.pack (hopefully)
+                  ]                 
+                  
+LocFoldersToDif = [
+                    ['English', FoldersToDiffLoc],
+                    ['French',  FoldersToDiffLoc],
+                    ['Italian', FoldersToDiffLoc],
+                    ['German',  FoldersToDiffLoc],
+                    ['Spanish', FoldersToDiffLoc],
+                    ['Russian', FoldersToDiffLoc],
+                    ['Polish',  FoldersToDiffLoc],
+                    ['Czech',   FoldersToDiffLoc],
+                    ['Japanese',FoldersToDiffLoc]
+                  ]    
+                  
+ShouldMoveNonLocFolders = [
+                    ['English', 1],
+                    ['French',  1],
+                    ['Italian', 1],
+                    ['German',  1],
+                    ['Spanish', 1],
+                    ['Russian', 1],
+                    ['Polish',  1],
+                    ['Czech',   1],
+                    ['Japanese',1]
+                  ]                                   
+
+ProductCode     = ARGUMENTS.get('productCode',  'retail')     # retail, direct2drive
+DistribSource   = ARGUMENTS.get('distribSource',  'retail')   # retail, direct2drive, digitalriver, steam
+
+P4              = r'p4'
+DevEnv          = r'C:\Program Files\Microsoft Visual Studio .NET 2003\Common7\IDE\devenv.com'
+Incredibuild    = r'C:\Program Files\Xoreax\IncrediBuild\BuildConsole.exe'
+InnoSetup       = r'C:\Program Files\Inno Setup 5\ISCC.exe'
+ISRoot          = r'C:\Program Files\Macrovision\IS12'
+ISCmdBuild      = os.path.join(ISRoot, r'System\IsCmdBld.exe')
+ISPacker        = os.path.join(ISRoot, r'System\ReleasePackager.exe')
+ISCompiler      = os.path.join(ISRoot, r'System\compile.exe')
+ISIncludes      = [r'script\ifx\include', r'script\isrt\include', r'script\include', r'script\SQLRuntime\Include', r'script\IISRuntime\Include', r'script\XMLRuntime\Include']
+
+WatermarkHeader = 'src/game/watermark.h'
+
+GameConfigs     = ['Debug', 'Release', 'Retail']
+ToolsConfigs    = ['Debug - DLL', 'Release - DLL']
+TestConfigs     = ['Release-DesyncTest']
+ModToolsConfigs = ['Debug', 'Release']
+LauncherConfigs = ['Debug', 'Release']
+
+ModToolsProjects = ['unpacker', 'RemoveDuplicates', 'patchbuilder', 'patcher']
+
+RELog           = {'null_assert' : re.compile(r'ASSERT\([ \t]*\([ \t]*null[ \t]*\)[ \t]*\)'),
+                   }
+for lvl in ['trace', 'info', 'warning', 'debug', 'error', 'fatal'] :
+    RELog[lvl] = re.compile(r'(?P<time>.*) (?P<id>\[.*\] \[%s\])(?P<msg>.*)' % lvl)
+for target in ['assert', 'script'] :
+    RELog[target] = re.compile(r'(?P<time>.*) (?P<id>\[.*%s.*\] \[error\])(?P<msg>.*)' % target )
+
+if not os.path.exists(Incredibuild):
+    UseIncredibuild = 0
+
+#------------------------------------------------------------------------------
+#Helper functions
+#------------------------------------------------------------------------------
+    
+#------------------------------------------------------------------------------
+
+def EnsureFolder(folder):
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
+def EnsureArtifactsFolder(target = None, source = None, env = None):
+    EnsureFolder(artifactsDir)
+    
+    if ModBuild:
+        EnsureFolder(modArtifactsDir)
+
+#------------------------------------------------------------------------------
+
+def Copy(path) :
+    try:
+        shutil.copyfile(path, os.path.join(artifactsDir, os.path.split(path)[1]))
+    except:
+        print 'cannot copy', path
+
+#------------------------------------------------------------------------------
+
+def P4Run(cmd, input = None):
+    #Two dimensional array (nested in python)
+    options = ''
+    opt_desc = [
+        ('p4port', '-p'),
+        ('p4user', '-u'),
+        ('p4client', '-c'),
+        ('p4passwd', '-P'),
+        ]
+        
+    #loops through each row and gets the variable and option for each row
+    for var, opt in opt_desc:
+        val = globals()[var]
+        if val:
+            options += ' %s %s' % (opt, val)
+
+    run = '%s %s -G %s' % (P4, options, cmd)
+    if Debug:
+        print "P4Run: %s" % run
+    (pin, pout) = os.popen4(run, 'b')
+
+    if input:
+        marshal.dump(input, pin, 0)
+    pin.close()
+
+    res = []
+    while 1:
+        try:
+            d = marshal.load(pout)
+            res.append(d)
+        except EOFError:
+            break
+    return res
+
+#Comments and updates specified changelist    
+def P4Changelist(descr):
+
+    # read the form from perforce
+    res = P4Run('change -o')
+    if Debug:
+        print 'p4 change -o :'; pprint(res)
+    if res[0]['code'] == 'error':
+        print 'Changelist request failed:\n  %s' % (res[0]['data'])
+        return 0
+
+    # replace the description and ditch the files section
+    spec = {}
+    for k in ('Change', 'Client', 'User', 'Status'):
+        spec[k] = res[0][k]
+    spec['Description'] = descr
+    if Debug:
+        print 'updated changelist :'; pprint(res)
+
+    res = P4Run('change -i', spec)
+    if Debug:
+        print 'p4 change -i :'; pprint(res)
+    if res[0]['code'] == 'error':
+        print 'Changelist creation failed:\n  %s' % (res[0]['data'])
+        return 0
+
+    m = re.match(r'Change (\d+) created\.', res[0]['data'])
+    if not m:
+        print "Cannot parse p4 output"
+        return 0
+    changelist = int(m.group(1))
+    return changelist
+
+#------------------------------------------------------------------------------
+
+BuildLogFormatting = \
+(
+    # re, colour, verbosity
+
+    # dev env format
+    #(re.compile(r'Build started:'), ''),
+
+    # incredibuild format
+    #(re.compile(r'Configuration:'), ''),
+
+    # common
+    (re.compile(r'.* - [1-9]\d+ error\(s\), \d+ warning\(s\)'), ''),
+    (re.compile(r'.* - up-to-date'), ''),
+
+    (re.compile(r': error'), 'red'),
+    (re.compile(r'fatal error'), 'red'),
+    (re.compile(r'The process cannot access the file'), 'red'),
+    (re.compile(r'No such file'), 'red'),
+    (re.compile(r'ERROR:'), 'red'),
+    (re.compile(r'\.\.\.failed'), 'red'),
+    (re.compile(r'Build System Error'), 'red'),
+    (re.compile(r'Failed to create dir'), 'red'),
+    (re.compile(r'Cannot create dir'), 'red'),
+
+    (re.compile(r': warning'), 'orange'),
+)
+
+LintLogFormatting = (
+    # re, colour, verbosity
+
+    (re.compile(r'Error --'), 'red'),
+    (re.compile(r'Warning --'), 'orange'),
+)
+
+
+
+DataLogFormatting = (
+    # re, colour, significance
+    (RELog['fatal'], 'red', 1),
+    (RELog['error'], 'red', 1),
+    (RELog['warning'], 'orange'),
+)
+
+RunLogFormatting = DataLogFormatting
+
+def Log2HTML(log, html, format) :
+    EnsureArtifactsFolder()
+    result = 0
+    last1 = ''
+    last2 = ''
+    last3 = ''
+    last4 = ''
+    last5 = ''
+    last6 = ''
+    try:
+        out = open(html, 'w')
+        out.write('<html><body bgcolor=White><pre><font>\n')
+        for line in file(log).readlines() :
+            last6 = last5
+            last5 = last4
+            last4 = last3
+            last3 = last2
+            last2 = last1
+            last1 = line
+            for element in format :
+                significance = 0
+                if len(element) > 2 :
+                    (pattern, colour, significance) = element
+                else:
+                    (pattern, colour) = element
+                if pattern.search(line) :
+                    out.write(last6)
+                    out.write(last5)
+                    out.write(last4)
+                    out.write(last3)
+                    out.write(last2)
+                    if significance > result :
+                        result = significance
+                    if colour :
+                        out.write('<font color=%s>' % colour)
+                    out.write(line.strip())
+                    if colour:
+                        out.write('</font>')
+                    out.write('\n')
+                    last6 = ''
+                    last5 = ''
+                    last4 = ''
+                    last3 = ''
+                    last2 = ''
+                    last1 = ''
+                    break
+        out.write('</font></pre></body></html>')
+        out.close()
+    except:
+        reason = str(sys.exc_info()[0])
+        try     : reason = str(sys.exc_info()[1])
+        except  : pass
+        print reason
+        result = 1
+
+    return result
+
+def CatFile(log_file):
+    f = open(log_file)
+    for s in f.readlines():
+        print s.strip()
+    f.close()
+
+#------------------------------------------------------------------------------
+#Creates the command line then uses that to kick off build
+def BuildSolution(target, source, env):
+    sln = str(source[0])
+    cfg = env['Config']
+    prj = env['Project']
+
+    log = r'obj\build-log.txt'
+    if os.path.exists(log):
+        os.remove(log)
+
+    cmd = None
+    if UseIncredibuild:
+        opt = Rebuild and "/rebuild" or ""
+
+        project_string = '';        
+        if prj:
+            project_string = '/PRJ="%s"' % prj
+        
+        cmd = '"%s" "%s" %s /CFG="%s" /Log="%s" %s' % (Incredibuild, sln, opt, cfg, log, project_string)
+    else:
+        opt = Rebuild and "/rebuild" or "/build"
+
+        project_string = '';        
+        if prj:
+            project_string = '/project "%s"' % prj
+        
+        cmd = '"%s" "%s" %s "%s" /out "%s" %s' % (DevEnv, sln, opt, cfg, log, project_string)
+
+    # start building
+    print '======================='
+    print ' Sleep 5 before build '
+    print '======================='
+    time.sleep(5) # added sleep to mitigate inability to gain exclusive access to file handle
+    ret = env.Execute(cmd)
+
+    # if failed, save the log
+    if ret != 0:
+        print 'Build of %s failed. The return code was %d' % (str(target[0]), ret)
+        
+        Log2HTML(log, os.path.join(artifactsDir, 'Errors-%s.html' % (str(target[0]))), BuildLogFormatting)
+
+    return ret
+
+bld = env.Builder(action = BuildSolution)
+env.Append(BUILDERS = {'Solution' : bld})
+
+#------------------------------------------------------------------------------
+
+reLabelDefine    = re.compile('define MTW2_BUILD_WATERMARK "(.*)"')
+reRevisionDefine = re.compile('define MTW2_BUILD_REVISION  (.*)')
+
+
+def UpdateWatermark():
+
+    if not updateWatermark:
+        return
+
+    header = WatermarkHeader
+    watermark = buildVersion
+    revision = "0"
+
+    # try to workout the last changelist synced
+    d = P4Run(r'changes -m1 ...')
+    if Debug:
+        print 'p4 changes :'; pprint(d)
+    if d[0].has_key('change'):
+        revision = d[0]['change']
+        watermark += ' (%s)' % revision
+
+    # scan the file, see whether it needs updating
+    update = True
+    text = []
+    for line in open(header).readlines():
+        m = reLabelDefine.search(line)
+        if m:
+            update = m.group(1) != watermark
+            if update:
+                line = m.string[:m.start(1)] + watermark + m.string[m.end(1):]
+        m = reRevisionDefine.search(line)
+        if m:
+            update = m.group(1) != revision
+            if update:
+                line = m.string[:m.start(1)] + revision + m.string[m.end(1):]
+        text.append(line)
+
+    # rewrite the file
+    if update:
+        print '  new watermark: "%s"' % watermark
+        f = open(header, "w")
+        f.writelines(text)
+        f.close()
+
+def SubmitWatermark(target, source, env):
+    
+    UpdateWatermark()
+    
+    if not submitWatermark:
+        print "submitWatermark option is not set..."
+        return 0
+
+    changelist = P4Changelist("-------- %s build mark --------" % buildVersion)
+    if not changelist:
+        return 1
+    print '  new changelist %i' % changelist
+
+    res = P4Run(r'edit -c %i version.txt' % changelist)
+    if Debug:
+        print 'p4 edit version.txt :'; pprint(res)
+    if res[0]['code'] == 'error':
+        print 'Failed to edit :\n  %s' % (res[0]['data'])
+        return 1
+
+    if Submit:
+        print '  submitting changelist %i' % changelist
+        res = P4Run(r'submit -c %i' % changelist)
+        if Debug:
+            pprint(res)
+        for r in res:
+            if r['code'] == 'error':
+                print 'Submitting failed:\n  %s' % (r['data'], )
+                return 2
+
+#------------------------------------------------------------------------------
+#Populates the /build directory in the specified bracnh ie builds the exes for artists and design
+def UpdateArtBuild(target, source, env):
+    '''
+    Algorithm of updating the artbuild:
+      1) integrate bin into ./build
+      2) update the .exe and .dll files
+    '''
+
+    changelist = P4Changelist('Art build: %s' % buildVersion)
+    if not changelist:
+        return 1
+    print '  new changelist %i' % changelist
+
+    def _integrate(folder, dest):
+        print '  integrating %s' % folder
+        res = P4Run(r'integrate -c %(changelist)i -t "%(folder)s" "%(dest)s"' % \
+                {
+                 'changelist':changelist,
+                 'folder':folder, 'dest':dest,
+                 })
+        # No error checking. There might be nothing to integrate.
+        if Debug:
+            print '  p4 integrate : %s' % res[0]
+
+    _integrate(r'bin\miles\...',                                    r'build\miles\...')
+    _integrate(r'bin\binkw32.dll',                                  r'build\binkw32.dll')
+    _integrate(r'bin\mss32.dll',                                    r'build\mss32.dll')
+    _integrate(r'installers\game\...',                              r'build\...')
+    
+    EnsureFolder('build\Launcher')
+    _integrate(r'Launcher\Launcher\Config\...',                     r'build\Launcher\Config\...')
+
+    print '  updating executable and .dll files'
+    files = [('',           r'bin\medieval2.exe'),
+             ('',           r'bin\medieval2_r.exe'),
+             ('',           r'bin\medieval2_d.exe'),
+             ('',           r'obj\medieval2-Retail\medieval2.pdb'),
+             ('',           r'obj\medieval2-Release\medieval2_r.pdb'),
+             ('',           r'obj\medieval2-Debug\medieval2_d.pdb'),
+             ('',           r'bin\cine.dll'),
+             ('',           r'bin\cine_d.dll'),
+             ('',           r'bin\cine.pdb'),
+             ('',           r'bin\cine_d.pdb'),
+             ('',           r'bin\IDV.dll'),
+             ('',           r'bin\IDV_d.dll'),
+             ('',           r'installers\tools\Output\caoz_tools_setup.exe'),
+             ('\Launcher',  r'Launcher\Launcher\Bin\Launcher.exe'),
+             ('\Launcher',  r'Launcher\Launcher\Bin\Launcher.pdb'),
+             ('\Launcher',  r'Launcher\Launcher\Bin\AxInterop.SHDocVw.dll'),
+             ('\Launcher',  r'Launcher\Launcher\Bin\Interop.SHDocVw.dll'),
+             ('\Launcher',  r'Launcher\Launcher\Bin\CoreLib.dll'),
+             ('\Launcher',  r'Launcher\Launcher\Bin\SkinLib.dll'),
+             ('\Launcher',  r'Launcher\Launcher\Bin\UpdateLib.dll')]
+    for folder, src in files:
+        if Debug:
+            print '    %s' % src
+        if not os.path.exists(src):
+            print '  executable %s does not exist' % src
+            return 4
+
+        dst = r'build%s\%s' % (folder, os.path.basename(src))
+        if os.path.exists(dst):
+            os.chmod(dst, 0777)     #change file attributes to make newly copied file writable
+            os.remove(dst)
+
+        def _copy(src, dst):
+            try:
+                shutil.copyfile(src, dst)
+            except:
+                print '  copy of %s to %s failed!' % (src, dst)
+                return 5
+            return 0
+
+        res = P4Run(r'fstat "%s"' % dst)
+        if Debug:
+            pprint(res)
+        if res[0]['code'] == 'stat':
+            res = P4Run(r'edit -c %i -t binary+lS %s' % (changelist, dst)) #+1S tells P4 to keep only 1 revision of this binary file, ie no reverting to previous revisions.
+            if Debug:
+                pprint(res)
+            if res[0]['code'] == 'error':
+                print 'Editing %s failed:\n  %s' % (dst, res[0]['data'])
+                return 2
+            if _copy(src, dst) != 0:
+                return 1
+        else:
+            if _copy(src, dst) != 0:
+                return 1
+            res = P4Run(r'add -c %i -t binary+lS %s' % (changelist, dst))
+            if Debug:
+                pprint(res)
+            if res[0]['code'] == 'error':
+                print 'Adding %s failed:\n  %s' % (dst, res[0]['data'])
+                return 2
+
+    res = P4Run('resolve -at ...')  #autoresolve in P4 accepting all the new files instead of merging
+    if Debug:
+        print '  p4 resolve : %s' % res[0]
+    # no error checking. there may be nothing to resolve
+
+    # revert unchanged files
+    res = P4Run('revert -a -c %i ...' % changelist)
+    if Debug:
+        print '  p4 resolve : %s' % res[0]
+
+    # see whether any files left in the changelist
+    res = P4Run('describe %i' % changelist)
+    if res[0]['code'] == 'stat' and not res[0].has_key('depotFile0'):
+        print 'Nothing to submit...'
+        P4Run('change -d %i' % changelist)
+        return 0
+
+    if Submit:
+        print '  submitting changelist %i' % changelist
+        res = P4Run(r'submit -c %i' % changelist)
+        if Debug:
+            pprint(res)
+        for r in res:
+            if r['code'] == 'error':
+                print 'Submitting failed:\n  %s' % (r['data'], )
+                return 2
+
+#------------------------------------------------------------------------------
+#Generates animation packs and rwm files by running the release version of the game (but not sound or game packs).
+def PacksGame():
+
+    log_file = os.path.join(artifactsDir, 'game-packs.log.txt')
+
+    if DemoBuild:
+        exe = r'%sjam.exe demo dds' % gamePath
+        res = env.Execute(exe)
+    else:
+        exe = r'%sjam.exe dds' % gamePath
+        res = env.Execute(exe)
+
+    exe = r'%s%s' % (gamePath, globals()["SKUExe"])
+    cmd = exe + r' --video.windowed --core.disable_dialogs ' + \
+            '--audio.disabled ' + \
+            '--util.animdb --util.rwm --io.filtered=nofilter ' + \
+            '--log.to='+log_file+' --log.level="* trace" '
+    res = env.Execute(cmd)
+
+    if DemoBuild:
+        cmd = exe + r' --video.windowed --core.disable_dialogs ' + \
+            '--io.filtered=nofilter --misc.quit_on_start --debug.bypass_to_battle=custom/pavia ' + \
+            '--log.to='+log_file+' --log.level="* trace" '
+        env.Execute(cmd)
+    
+    # save the log
+    if Log2HTML(log_file, os.path.join(artifactsDir, 'game-packs.log.html'), DataLogFormatting):
+        res = 1
+
+    return res
+
+def PacksGame_Mod():
+
+    log_file = os.path.join(modArtifactsDir, 'game-packs.log.txt')
+    
+    if DemoBuild:
+        exe = r'%sjam.exe demo dds' % gamePath
+        res = env.Execute(exe)
+    else:
+        exe = r'%sjam.exe dds' % gamePath
+        res = env.Execute(exe)
+
+    exe = r'%s%s' % (gamePath, globals()["SKUExe"])
+    cmd = exe + r' --video.windowed --core.disable_dialogs ' + \
+            '--audio.disabled ' + \
+            '--features.mod=%s ' % modPath.replace('\\', '/') + \
+            '--util.animdb --util.rwm --io.filtered=nofilter ' + \
+            '--log.to='+log_file+' --log.level="* trace" '
+    env.Execute(cmd)
+      
+    # save the log
+    if Log2HTML(log_file, os.path.join(modArtifactsDir, 'game-packs.log.html'), DataLogFormatting):
+       res = 1
+        
+    return res
+
+#Generates the *.pack files located in the \Packs folder for distribution uses \util\packer.cfg
+def PacksPacker():
+    log_file = os.path.join(artifactsDir, 'packer.log.txt')
+    res=0
+    if DemoBuild:
+        print "pack1"
+        cmd = r'.\bin\packer.exe --config=.\util\packer-demo.cfg --verbosity 5 > %s' % log_file
+        res = env.Execute(cmd)
+
+        shutil.copyfile('./packs/data.pack', './sedata.pack')
+        shutil.copyfile('./data/menu/demo.lnt', './data/menu/_demo.lnt')
+        os.chmod('./data/menu/demo.lnt',stat.S_IWRITE)
+        shutil.copyfile('./data/menu/demo2.lnt', './data/menu/demo.lnt')
+
+        print "pack2"
+        cmd = r'.\bin\packer.exe --config=.\util\packer-demo.cfg --verbosity 5 >> %s' % log_file
+        res = env.Execute(cmd)
+
+        shutil.copyfile('./data/menu/_demo.lnt', './data/menu/demo.lnt')
+        os.chmod('./data/menu/demo.lnt',stat.S_IREAD)
+
+    else:
+        cmd = r'.\bin\packer.exe --config=.\util\packer.cfg --verbosity 5 > %s' % log_file
+        res = env.Execute(cmd)
+        
+    return res
+
+#Packer is not mod aware so runs packer with mod specific config file eg packer-mods-british_isles.cfg, NB these files live in the root \util folder, not the ones under mods
+def PacksPacker_Mod():
+    res=0
+    log_file = os.path.join(modArtifactsDir, 'packer.log.txt')
+    cmd = r'.\bin\packer.exe --config=.\util\packer-%s.cfg --verbosity 5 > %s' % (modPath.replace('\\', '-'), log_file)
+    res = env.Execute(cmd)
+    return res
+
+#Builds string tables and audio packs
+def PacksLocalized():
+
+    res = 0
+    
+    if packSound:       #was used for Japanese was running out of memory and Japanese retail uses English sound packs
+        cleanup = []
+        cleanup += glob.glob(r'.\data\text\*.strings.bin')
+        cleanup += glob.glob(r'.\data\sounds\*.idx')
+        cleanup += glob.glob(r'.\data\sounds\*.dat')
+        for f in cleanup:
+            print "  cleaning %s" % f
+            os.remove(f)
+        
+        #builds sound packs LESS the events pack
+        log_file = os.path.join(artifactsDir, 'game-packs-sound.%s.log.txt' % LanguageId)
+        exe = r'%s%s' % (gamePath, globals()["SKUExe"])
+        utils = '--util.sound --util.no_events_pack '
+        cmd = exe + r' --video.windowed --core.disable_dialogs ' + \
+                utils +  '--io.filtered=nofilter ' + \
+                '--log.to='+log_file+' --log.level="* trace" '
+        res = env.Execute(cmd)
+
+        # save the log
+        if Log2HTML(log_file, os.path.join(artifactsDir, 'game-packs-sound.%s.log.html' % LanguageId), DataLogFormatting):
+            if not res:
+                res = 1
+
+        if res != 0:
+            return res
+            
+        #builds the string tables and the events audio pack
+        log_file = os.path.join(artifactsDir, 'game-packs.%s.log.txt' % LanguageId)
+        cmd = exe + r' --video.windowed --core.disable_dialogs ' + \
+                '--util.strings --io.filtered=nofilter ' + \
+                '--log.to='+log_file+' --log.level="* trace" '
+        res = env.Execute(cmd)
+
+        # save the log
+        if Log2HTML(log_file, os.path.join(artifactsDir, 'game-packs.%s.log.html' % LanguageId), DataLogFormatting):
+            if not res:
+                res = 1
+
+        if res != 0:
+            return res
+
+        #Builds pack files for localised data ie localised.pack
+        log_file = os.path.join(artifactsDir, 'packer.%s.log.txt' % LanguageId)
+        cmd = r'.\bin\packer.exe --config=.\util\packer-localized.cfg --verbosity 5 > %s' % log_file
+        res = env.Execute(cmd)
+    else:
+        cleanup = []
+        cleanup += glob.glob(r'.\data\text\*.strings.bin')
+        for f in cleanup:
+            print "  cleaning %s" % f
+            os.remove(f)
+        
+        log_file = os.path.join(artifactsDir, 'game-packs.%s.log.txt' % LanguageId)
+        exe = r'%s%s' % (gamePath, globals()["SKUExe"])
+        utils = '--util.strings '
+        cmd = exe + r' --video.windowed --core.disable_dialogs ' + \
+                utils +  '--io.filtered=nofilter ' + \
+                '--log.to='+log_file+' --log.level="* trace" '
+        res = env.Execute(cmd)
+
+        # save the log
+        if Log2HTML(log_file, os.path.join(artifactsDir, 'game-packs.%s.log.html' % LanguageId), DataLogFormatting):
+            if not res:
+                res = 1
+
+        if res != 0:
+            return res
+
+        log_file = os.path.join(artifactsDir, 'packer.%s.log.txt' % LanguageId)
+        cmd = r'.\bin\packer.exe --config=.\util\packer-localized.cfg --verbosity 5 > %s' % log_file
+        res = env.Execute(cmd)
+    
+    return res
+    
+def PacksLocalized_Mod():
+
+    cleanup = []
+    cleanup += glob.glob(r'.\%s\data\text\*.strings.bin' % modPath)
+    cleanup += glob.glob(r'.\%s\data\sounds\*.idx' % modPath)
+    cleanup += glob.glob(r'.\%s\data\sounds\*.dat' % modPath)
+    for f in cleanup:
+        print "  cleaning %s" % f
+        os.remove(f)
+
+    log_file = os.path.join(modArtifactsDir, 'game-packs-sound.%s.log.txt' % LanguageId)
+    exe = r'%s%s' % (gamePath, globals()["SKUExe"])
+    utils = '--util.sound --util.no_events_pack '
+    cmd = exe + r' --video.windowed --core.disable_dialogs ' + \
+            utils +  '--io.filtered=nofilter ' + \
+            '--features.mod=%s ' % modPath.replace('\\', '/') + \
+            '--log.to='+log_file+' --log.level="* trace" '
+    res = env.Execute(cmd)
+
+    # save the log
+    if Log2HTML(log_file, os.path.join(modArtifactsDir, 'game-packs-sound.%s.log.html' % LanguageId), DataLogFormatting):
+        if not res:
+            res = 1
+
+    if res != 0:
+        return res
+        
+    log_file = os.path.join(modArtifactsDir, 'game-packs.%s.log.txt' % LanguageId)
+    cmd = exe + r' --video.windowed --core.disable_dialogs ' + \
+            '--util.strings --io.filtered=nofilter ' + \
+            '--features.mod=%s ' % modPath.replace('\\', '/') + \
+            '--log.to='+log_file+' --log.level="* trace" '
+    res = env.Execute(cmd)
+
+    # save the log
+    if Log2HTML(log_file, os.path.join(modArtifactsDir, 'game-packs.%s.log.html' % LanguageId), DataLogFormatting):
+        if not res:
+            res = 1
+
+    if res != 0:
+        return res
+            
+    log_file = os.path.join(modArtifactsDir, 'packer.%s.log.txt' % LanguageId)
+    cmd = r'.\bin\packer.exe --config=.\util\packer-localized-%s.cfg --verbosity 5 > %s' % (modPath.replace('\\', '-'), log_file)
+    res = env.Execute(cmd)
+    
+    return res
+
+
+#------------------------------------------------------------------------------
+#Generates command to build a specified config.  Prefix [?], sln [tools.sln, medieval2.sln, launcher.sln etc], 
+#configs are visual studio configs [debug, release, retail etc], projects optional [builds selected vcprojs in sln] <- useful as not 
+#all projects in tools can be built with the same confg (eg release-dll)
+def GenerateSolutionTargets(prefix, sln, configs, projects = []):
+            
+    targets = []
+    for cfg in configs:
+        if projects:
+            for p in projects:
+                tgt = env.Solution('%s-%s-%s' % (prefix, cfg, p), sln, Config='%s' % cfg, Project=p)
+                env.AlwaysBuild(tgt)
+                targets.append(tgt)
+        else:
+            tgt = env.Solution('%s-%s' % (prefix, cfg), sln, Config='%s' % cfg, Project=0)
+            env.AlwaysBuild(tgt)
+            targets.append(tgt)
+    return targets
+
+#------------------------------------------------------------------------------
+
+def SaveBuildArtifacts(target, source, env):
+
+    print ' '
+    print '============================================='
+    print r'SaveBuildArtifacts called, copying bin to %s\binaries' % artifactsDir
+    print '=============================================' 
+    
+    print "  copying bin folder"
+    folder = os.path.join(artifactsDir, 'binaries')
+    if os.path.exists(folder):
+        shutil.rmtree(folder)
+    shutil.copytree(r'.\bin', folder)
+    
+    reArtifact = re.compile(r'^(?:medieval2|kingdoms).*\.(?:map|pdb)$', re.IGNORECASE)
+    for root, dirs, files in os.walk(r'.\obj'):
+        for f in files:
+            if reArtifact.match(f):
+                print "  copying %s" % f
+                fn = os.path.join(root, f)
+                shutil.copyfile(fn, os.path.join(folder, f))
+
+
+def AutoTest(target, source, env) :
+    from util.autorun import autorun
+
+    return autorun.AutoRun(ARGUMENTS, Execute, Log2HTML, RELog, RunLogFormatting)
+
+#------------------------------------------------------------------------------
+#This is our day to day installer used by QA to install builds, not the release installshield
+def CreateGameInstaller():
+    EnsureArtifactsFolder()
+
+    install_exe = 'MTW2-setup-%s' % buildVersion
+    cmd = r'"%s" .\installers\game.iss /o"%s" /f"%s" "/dbuildVersion=%s"' % \
+         (InnoSetup, os.path.join(artifactsDir, 'installer'), install_exe, buildVersion)
+
+    if buildNumber:
+        cmd += ' /dbuildNumber=%s' % buildNumber
+
+    if installerPassword:
+        cmd += ' /dinstallerPassword=%s' % installerPassword
+
+    res = env.Execute(cmd)
+    if res == 0:
+        f = open(os.path.join(artifactsDir, 'installer', 'Autorun.inf'), 'w')
+        f.write('[autorun]\n')
+        f.write('open=%s.exe\n' % install_exe)
+        f.close()
+
+    return res
+
+#------------------------------------------------------------------------------
+#As above but generates the installer for the currently set installer
+def CreateModInstaller():
+    EnsureArtifactsFolder()
+
+    install_exe = 'MTW2-%s-setup-%s' % (modName, buildVersion)
+    cmd = r'"%s" .\installers\game-dlc.iss /o"%s" /f"%s" "/dbuildVersion=%s" "/dmodPath=%s" "/dmodName=%s"' % \
+         (InnoSetup, os.path.join(modArtifactsDir, 'installer'), install_exe, buildVersion, modPath, modName)
+
+    if buildNumber:
+        cmd += ' /dbuildNumber=%s' % buildNumber
+
+    if installerPassword:
+        cmd += ' /dinstallerPassword=%s' % installerPassword
+
+    res = env.Execute(cmd)
+
+    return res
+
+#------------------------------------------------------------------------------
+#Changes the InstallShield script, specifically GUID, root path and release version
+def AdjustISM(source, root_path, release_version, productGuid):
+    pguids = {  'retail':'{C0698BDA-0D29-40EE-8570-A31106DF9AB1}',
+                'direct2drive':'{A9D0745C-BABD-472B-8AF0-FAF888D31046}',
+                'digitalriver':'{E3B264C6-632C-4B6B-98FE-C5934A103258}',
+                '':''}
+
+    print ' '
+    print '=========================================================================================================================================='
+    print 'Entered AjustISM with source (%s), root_path (%s), release_version (%s), productGuid (%s)' % (source, root_path, release_version, productGuid)
+    print 'Product GUID string: %s' % pguids[productGuid]
+    print '=========================================================================================================================================='
+    
+    try:
+        print 'Opening %s read only' % (source)
+        f = open(source, 'r')
+        print 'Opening %s%s writable' % (source, '.tmp0')
+        w = open(source +'.tmp0', 'w')
+        print 'Opens both succeeded'
+        
+        lineNum = 0
+        try:
+            lines = f.readlines()
+        except:
+            print 'Error: readlines() threw an exception on file %s' % source
+            return 1
+            
+        for s in lines:
+            findString = ''
+            try:
+            
+                if root_path != '':
+                    findString = '<row><td>ROOT_PATH</td><td>'
+                    res = -1
+                    try:
+                        res = s.find(findString)
+                    except:
+                        print 'Error: find threw an exception trying to find %s in %s at line %d' % (findString, source, lineNum)
+                        return 1
+                                         
+                    if res >= 0:
+                        print 'found %s ok' % findString
+                        try:
+                            s = '\t\t' + findString + root_path + '</td><td/><td>2</td></row>\n'
+                        except:
+                            print 'Error: unable to build string for %s' % findString
+                            return 1
+                            
+                                                    
+                if release_version != '':
+                    findString = '<row><td>ProductVersion</td><td>'
+                    res = -1
+                    try:
+                        res = s.find(findString)
+                    except:
+                        print 'Error: find threw an exception trying to find %s in %s at line %d' % (findString, source, lineNum)
+                        return 1
+                                         
+                    if res >= 0:
+                        try:
+                            s = '\t\t' + findString + release_version + '</td><td/></row>\n'
+                        except:
+                            print 'Error: unable to build string for %s' % findString
+                            return 1
+                            
+                                                    
+                if productGuid != '':
+                    findString = '<row><td>ProductCode</td><td>'
+                    res = -1
+                    try:
+                        res = s.find(findString)
+                    except:
+                        print 'Error: find threw an exception trying to find %s in %s at line %d' % (findString, source, lineNum)
+                        return 1
+                        
+                    if res >= 0:
+                        pguid = ''
+                        try:
+                            pguid = pguids[productGuid]
+                        except:
+                            print 'Error: trying to access element %d of pguids' % productGuid
+                            return 1
+                        
+                        try:
+                            s = '\t\t' + findString + pguid + '</td><td/></row>\n'            
+                        except:
+                            print 'Error: unable to build string for %s and %s' % (findString, pguid)
+                            return 1
+                        
+                lineNum = lineNum + 1
+                
+            except:
+                print 'Error: find loop threw an exception trying to find %s (%s) in %s at line %d' % (findString, s, source, lineNum)
+                return 1             
+                
+            try:              
+                w.write(s)
+            except:
+                print 'Error: failed to write to %s%s' % (source, '.tmp0')
+                return 1
+                    
+                
+        try: 
+            w.close()
+        except:
+            print 'Error: failed to close to %s%s' % (source, '.tmp0')
+            return 1
+            
+        try: 
+            f.close()
+        except:
+            print 'Error: failed to close to %s' % (source)
+            return 1
+        
+            
+        oldSrc = source +'.old'
+        if os.path.exists(oldSrc):
+            os.chmod(oldSrc, 0777)     #change file attributes to make file writable
+            print 'removing %s' % oldSrc
+            os.remove(source +'.old')
+            
+        print 'renaming %s to %s' % (source, oldSrc)
+        os.rename(source, source +'.old')
+        
+        
+        if os.path.exists(source):
+            os.chmod(source, 0777)     #change file attributes to make file writable
+            print 'removing %s' % source
+            os.remove(source)
+            
+        print 'renaming %s to %s' % (source +'.tmp0', source)
+        os.rename(source +'.tmp0', source)
+        
+        print 'Root path in %s changed to <%s>' % (source,root_path)
+    except:
+        print 'Error: can not change %s' % source
+        return 1
+    return 0
+    
+#------------------------------------------------------------------------------
+#Restores the original InstallShield script
+def RestoreISM(source):
+    print 'restoring original of %s' % source
+    
+    try:
+        if os.path.exists(source):
+            os.remove(source)
+        os.rename(source + '.old', source)
+    except:
+        print 'Error: unabel to restore %s' % source
+        return 1
+        
+    return 0
+
+#------------------------------------------------------------------------------
+#Changes the InstallShield script, specifically the distribution source
+def AdjustScript(source, distribSrc):
+
+    try:
+        os.chmod(source, 0777)
+        f = open(source, 'r')
+        w = open(source +'.tmp0', 'w')
+        for s in f.readlines():
+            if distribSrc != '':
+                if s.find('scriptreplaceDS') >= 0:
+                    s = '    distributionSource = "' + distribSrc + '";//scriptreplaceDS\n'
+            w.write(s)
+        w.close()
+        f.close()
+        
+        print 'renaming %s to %s' % (source, source +'.old')
+        if os.path.exists(source +'.old'):
+            os.remove(source + '.old')
+        os.rename(source, source +'.old')
+        
+        print 'renaming %s to %s' % (source +'.tmp0', source)
+        
+        if os.path.exists(source):
+            os.remove(source)
+        os.rename(source +'.tmp0', source)
+    except:
+        print 'Error: can not change %s script' % source
+        return 1
+    return 0
+    
+#------------------------------------------------------------------------------
+#Restores the original InstallShield script
+def RestoreScript(source):
+    print 'restoring original of %s' % source
+    
+    try:
+        if os.path.exists(source):
+            os.remove(source)
+        os.rename(source + '.old', source)
+    except:
+        print 'Error: unabel to restore %s' % source
+        return 1
+        
+    return 0
+
+#------------------------------------------------------------------------------
+#Builds InstallShield lib
+def BuildISLib():
+    folder = os.getcwd()
+    os.chdir(r'.\installers\islib')
+    EnsureFolder(r'.\lib')
+    # compile
+    opt =  r'-c -i".\inc"'
+    for s in ISIncludes:
+        opt += r' -i"%s"' % os.path.join(ISRoot,s)
+    for s in os.listdir(r'.\src'):
+        if os.path.splitext(s)[1] == '.rul':
+            cmd = r'"%s" .\src\%s %s' % (ISCompiler, s, opt)
+            res = env.Execute(cmd)
+            if res != 0:
+                os.chdir(folder)
+                return res
+    # link
+    cmd = r'"%s"' % ISCompiler
+    for s in os.listdir(r'.\src'):
+        if os.path.splitext(s)[1] == '.obs':
+            cmd += r' .\src\%s' % s
+    cmd += r' -l -o".\lib\islib.obl"'
+    res = env.Execute(cmd)
+    if res != 0:
+        os.chdir(folder)
+        return res
+
+    os.chdir(folder)
+    return 0
+
+#------------------------------------------------------------------------------
+#called by CreateDemoInstaller
+def CreateDemoInstallerEx(project, release, target):
+
+    folder = os.getcwd()
+    os.chdir(os.path.join(r'.\installers',project))
+
+    res = AdjustISM(project+'.ism', folder, '')
+    if res != 0:
+        os.chdir(folder)
+        return res
+
+    # build skin
+    if os.path.exists(r'.\skin') :
+        print 'Building skin ...'
+        res = env.Execute(r'..\tools\isskintool\CreateSkinFile.exe .\skin setup.isn')
+        print '\n'
+        if res == 0:
+            os.chdir(folder)
+            return res
+
+    # build media
+    cmd = r'"%s" -p "%s" -r "%s"' % (ISCmdBuild, project+'.ism', release)
+    if Debug:
+        print cmd
+    res = 0
+    res = env.Execute(cmd)
+    if res != 0:
+        os.chdir(folder)
+        return res
+
+    # copy skin
+    if os.path.exists(r'.\setup.isn') :
+        print 'Replacing skin ...'
+        try:
+            shutil.copyfile(r'.\setup.isn', r'.\%s\Media\%s\Disk Images\Disk1\setup.isn' % (project, release))
+            print 'Done.'
+        except:
+            print 'Error: cannot copy skin'
+
+    os.chdir(folder)
+
+    # pack to selfextract exe
+    targetFolder = os.path.join(artifactsDir, 'installer')
+    EnsureFolder(targetFolder)
+    cmd = r'"%s" ".\installers\%s\%s\Media\%s\Disk Images" "%s" "%s" 0' % (ISPacker, project, project, release, os.path.join(targetFolder, target), os.path.join(folder, r'bin\medieval2.exe'))
+    if Debug:
+        print cmd
+    res = 0
+    res = env.Execute(cmd)
+    if res != 0:
+        os.chdir(folder)
+        return res
+
+    os.chdir(folder)
+    return 0
+
+#------------------------------------------------------------------------------
+
+def CreateDemoInstaller():
+
+    EnsureArtifactsFolder()
+    BuildISLib()
+
+    # demo
+    folder = os.getcwd()
+    CreateDemoInstallerEx('demo', 'CD650', 'Medieval 2 Total War Demo.exe')
+    print "idemo"
+    os.chdir(folder)
+
+    shutil.copyfile('./sedata.pack', './packs/data.pack')
+
+    print "idemo2"
+    # demo SE
+    CreateDemoInstallerEx('demose', 'CD650', 'Medieval 2 Total War Demo SE.exe')
+
+
+#------------------------------------------------------------------------------
+
+def CreateInstallerEx(project, release, targetDir, release_version, productCode, distribSrc):
+
+    print ' '
+    print '============================================='
+    print 'CreateInstallerEx called'
+    print '=============================================' 
+
+    EnsureFolder(targetDir)
+
+    folder = os.getcwd()
+    os.chdir(os.path.join(r'.\installers',project))
+    
+    # make ism writable
+    ISMFileName = project+'.ism'
+    #os.chmod(ISMFileName, 0777)
+
+
+    # build skin
+    if os.path.exists(r'.\skin') :
+        print 'Building skin ...'
+        res = env.Execute(r'..\tools\isskintool\CreateSkinFile.exe .\skin setup.isn')
+        print '\n'
+        if res == 0:
+            os.chdir(folder)
+            return res
+
+    # set version is needed
+   # if release_version != '' or productCode != '' :
+    res = AdjustISM(ISMFileName, '', release_version, productCode)
+    if res != 0:
+        os.chdir(folder)
+        return res
+
+    # fix script
+    if distribSrc != '':
+        res = AdjustScript(project +'\\'+'Script Files'+'\\'+'Setup.Rul', distribSrc)
+        if res != 0:
+            os.chdir(folder)
+            RestoreISM(project+'.ism')
+            return res
+
+    # build media
+    cmd = r'"%s" -p "%s" -r "%s" -b "%s"'  % (ISCmdBuild, ISMFileName, release, os.path.join(folder,targetDir))
+    if Debug:
+        print cmd
+
+        
+    res = 0
+    res = env.Execute(cmd)
+
+    
+    if res != 0:
+        os.chdir(folder)
+        return res    
+    
+    #restore the scripts
+    #if release_version != '' or productCode != '' :
+    RestoreISM(ISMFileName)
+    
+    if distribSrc != '':
+        RestoreScript(project +'\\'+'Script Files'+'\\'+'Setup.Rul')
+
+    os.chdir(folder)
+
+    return 0
+
+#------------------------------------------------------------------------------
+#Demoshield launcher on CD/DVD
+def CreateLauncher(project):
+
+    language = LanguageId
+    if language == 'American':
+        language = 'English'
+    langId = {'English':'ENU', 'German':'DEU', 'French':'FRA', 'Italian':'ITA', 'Spanish':'ESP', 'Russian':'RUS', 'Polish':'PLK', 'Czech':'CSY', 'Japanese':'JPN', 'American':'ENU'}
+    mediaDir = os.path.join(artifactsDir, LanguageId, 'Disk Images')
+    targetDir = os.path.join(mediaDir, 'Disk1')
+    launcherDir = os.path.join(targetDir, 'launcher')
+    srcDir = r'.\installers\launcher'
+
+    # launcher subfolder on target media
+    print 'Copying launcher files into launcher subfolder...'
+    EnsureFolder(launcherDir)
+    for fn in ['launcher.txt', 'launcher.dbd', 'demo32.exe', 'gdiplus.dll'] :
+        shutil.copyfile(os.path.join(srcDir, fn), os.path.join(launcherDir, fn))
+    print "  copying Readme_Kingdoms.txt"
+    shutil.copyfile(os.path.join(r'.\installers',project,'support',language,'Readme_Kingdoms.txt'), os.path.join(launcherDir, 'Readme_Kingdoms.txt'))
+    print 'Done.'
+
+    # root
+    print 'Copying launcher files into the first media root...'
+    if os.path.exists(os.path.join(targetDir, 'autorun.inf')) :
+        os.chmod(os.path.join(targetDir, 'autorun.inf'),stat.S_IWRITE)
+    srcDir =  os.path.join(srcDir, 'root')
+    for fn in ['autorun.inf', 'Launch.exe', 'Launch.ini'] :
+        shutil.copyfile(os.path.join(srcDir, fn), os.path.join(targetDir, fn))
+    print 'Done.'
+
+    # fix Launch.ini
+    #if language != 'English':
+    #    print 'Setting up language id in Launch.ini...'
+    #    os.chmod(os.path.join(targetDir, 'Launch.ini'),stat.S_IWRITE)
+    #    os.remove(os.path.join(targetDir, 'Launch.ini'))
+    #    f = open(os.path.join(srcDir, 'Launch.ini'), 'r')
+    #    w = open(os.path.join(targetDir, 'Launch.ini'), 'w')
+    #    for s in f.readlines():
+    #        if s.find('CmdLine=-q') >= 0:
+    #            s = 'CmdLine=-q -L' + langId[language] + '\n'
+    #        w.write(s)
+    #    w.close()
+    #    f.close()
+    #    print 'Done.'
+
+    return 0
+
+#------------------------------------------------------------------------------
+
+def CreateRetailInstaller():
+
+    EnsureArtifactsFolder()
+    res = BuildISLib()
+    if res != 0:
+         return res
+
+    targetDir = os.path.join(artifactsDir, LanguageId)
+    language = LanguageId
+    if language == 'American':
+        language = 'English'
+    res = CreateInstallerEx('beta', language +'_1_00', targetDir, releaseVersion)   #uses InstallShield script called beta.ism.  The project name ('beta') MUST be stored in a folde of the same name.
+    if res != 0:
+         return res
+    return CreateLauncher('beta')
+
+#------------------------------------------------------------------------------
+
+def CreateRetailPatch1():
+
+    EnsureArtifactsFolder()
+    res = BuildISLib()
+    if res != 0:
+         return res
+
+    targetDir = os.path.join(artifactsDir, LanguageId)
+    if DistribSource != '':
+        targetDir = os.path.join(targetDir, DistribSource)
+    language = LanguageId
+    if language == 'American':
+        language = 'English'
+    res = CreateInstallerEx(PatchInstaller, language +'_1_01', targetDir, releaseVersion, ProductCode, DistribSource)
+    if res != 0:
+         return res
+
+    return 0
+
+#------------------------------------------------------------------------------
+#Diffs are output to Diffs\Patch then purged (diffs are only intermediate files used to build the installer)    
+def CreateRetailUpdate2Diff():
+
+    EnsureArtifactsFolder()
+         
+    # setup destination diff folder
+    targetDir = os.path.join(os.getcwd(), r'Diffs\Patch')
+    
+    # remove any existing diffs
+    shutil.rmtree(targetDir, True)
+    
+    # create the folder
+    EnsureFolder(targetDir)
+
+    #diff the folders
+    for fld, opt in FoldersToDiff:
+        res = CreateDiffs(targetDir, fld, opt)
+        if res != 0:
+            return res
+    
+    return 0
+
+#------------------------------------------------------------------------------
+#targetDir = output dir
+#folder    = one of FoldersToDiff
+#options   = command line args to pass when launching patchbuilder
+def CreateDiffs(targetDir, folder, options):
+    niceFolderName = folder.replace('\\', '_')      #clean names for log files
+    newPath = os.path.join(os.getcwd(), folder)
+    oldPath = os.path.join(ReferenceVersion, "%s\%s" % (LanguageId, folder)) #ReferenceVersion set but luntbuild builder params, so a 1.1 to 1.3 patch would pass in 1.0
+    outputPath = os.path.join(targetDir, folder)
+    
+    EnsureFolder(outputPath)
+    
+    log = os.path.join(artifactsDir, 'build-patch-%s-%s.log.txt' % (niceFolderName, LanguageId))
+    
+    cmd = r'%spatchbuilder -v %s -s "%s" "%s" "%s" >"%s"' % (toolsPath, options, outputPath, newPath, oldPath, log)
+    res = env.Execute(cmd)
+    
+    if res != 0:
+        return res
+    
+    return 0
+
+#------------------------------------------------------------------------------       
+
+def CreateRetailUpdate2Install():
+    res = 0         #0 indicates success in python
+
+    # prepare the language assets
+    if os.path.exists(BackupRoot):
+        CleanupFolder(BackupRoot)
+
+    assets = None
+
+    try:
+        assets = CopyLanguageAssets()
+
+        # build localized pack files
+        res = PacksLocalized()
+        
+        # create the diffs
+        if res == 0:
+            res = CreateRetailUpdate2Diff()
+        
+        # create an installer
+        if res == 0:
+            res = CreateRetailUpdate2Installer()
+
+    except Exception, ex:
+        print ex
+        res = 1
+
+    # revert to English
+    RestoreLanguageAssets(assets)
+
+    return res
+    
+def CreateRetailUpdate2Installer():
+
+    EnsureArtifactsFolder()
+    res = BuildISLib()
+    if res != 0:
+         return res
+
+    # build the installer
+    targetDir = os.path.join(artifactsDir, LanguageId)
+    if DistribSource != '':
+        targetDir = os.path.join(targetDir, DistribSource)
+    language = LanguageId
+    if language == 'American':
+        language = 'English'
+    res = CreateInstallerEx(PatchInstaller, language + PatchVersion, targetDir, releaseVersion, ProductCode, DistribSource)
+    
+    if res != 0:
+         return res
+
+    return 0
+    
+#------------------------------------------------------------------------------
+#SKU Utilities   
+#------------------------------------------------------------------------------
+
+def CopyDirectory(source, destination):
+
+    print ' '
+    print '============================================='   
+    print 'CopyDirectory [%s] to [%s]' % (source, destination)
+    print '=============================================' 
+    
+    # recursive file copy (shutil.copytree will fail if destination exists)
+    for root, dirs, files in os.walk(source):
+        for file in files:
+            relative_root = root[len(source)+1:]
+            src = os.path.join(root, file)
+            ddr = os.path.join(destination, relative_root)
+            dst = os.path.join(ddr, file)
+            
+            # copy will fail if it is a new sub folder
+            if not os.path.exists(ddr):
+                print 'making %s' % ddr
+                os.makedirs(ddr)
+            
+            CopyFile(src, dst)   
+        
+    return 0
+    
+#------------------------------------------------------------------------------    
+    
+def CopyFile(source, destination):    
+    
+    if os.path.exists(source):
+        try:
+            shutil.copyfile(source, destination)
+        except IOError, e:
+            print 'cannot copy %s to %s' % (source, destination)
+    
+#------------------------------------------------------------------------------    
+    
+def MoveDirectory(source, destination):
+
+    # WILL FAIL IF DESTINATION EXISTS
+
+    print ' '
+    print '============================================='   
+    print 'MoveDirectory [%s] to [%s]' % (source, destination)
+    print '=============================================' 
+    
+        
+    if os.path.exists(source):
+        print 'renaming %s to %s' % (source, destination)
+        os.renames(source, destination)
+        return 0
+    else:
+        print 'MoveDirectory failed, source (%s) does not exist' % (source)
+        return 1
+        
+    
+        
+#------------------------------------------------------------------------------
+#SKU Pre-builders      
+#------------------------------------------------------------------------------        
+        
+#------------------------------------------------------------------------------
+
+def SetKingdomsExe(args):
+
+    print ' '
+    print '============================================='   
+    print 'SetKingdomsExe called'
+    print '============================================='   
+    
+    globals()["SKUExe"] = 'kingdoms_r.exe'
+    print 'data will now be built with %s' % globals()["SKUExe"]
+    
+    return 0
+    
+#------------------------------------------------------------------------------
+    
+def SetMedieval2Exe(args):
+
+    print ' '
+    print '============================================='   
+    print 'SetMedieval2Exe called'
+    print '============================================='   
+    
+    globals()["SKUExe"] = 'medieval2_r.exe'
+    print 'data will now be built with %s' % globals()["SKUExe"]
+    
+    return 0    
+    
+#------------------------------------------------------------------------------
+
+def NLBuilder_GameData(args):
+
+    print ' '
+    print '============================================='   
+    print 'NLBuilder_GameData called'
+    print '============================================='     
+    
+    #verify the blocks
+    ret = CheckBlocks()
+    if ret:
+        return ret
+    
+    #do a data convert but don't populate cache
+    ret = DataConvert(LowQuality)
+    if ret:
+        return ret
+    
+    #builds non-localised game packs (anims and rwm fils) by running the game (ie not sounds or strings as these are localised)
+    ret = PacksGame()
+    if ret:
+        return ret
+        
+    #creates *.pack files but excludes sounds, anims and text
+    ret = PacksPacker()
+    if ret:
+        return ret
+        
+    return 0
+   
+#------------------------------------------------------------------------------
+
+def NLBuilder_GameDiff(args):
+
+    print ' '
+    print '============================================='   
+    print 'NLBuilder_GameDiff called'
+    print '=============================================' 
+
+    # use the first sku language specified as the reference for non localised diffs
+    prevLanguage = globals()["LanguageId"]
+    languages = SKULanguages[globals()["SKUIndex"]][1]
+    globals()["LanguageId"] = languages[0]
+        
+    EnsureArtifactsFolder()
+         
+    # setup destination diff folder
+    targetDir = os.path.join(os.getcwd(), r'Diffs\Non Localised\Patch')
+    
+    # remove any existing diffs
+    shutil.rmtree(targetDir, True)
+    
+    # create the folder
+    EnsureFolder(targetDir)
+
+    #diff the folders
+    for folder, options in FoldersToDiffNL:
+        print 'Creating diffs for [%s] with options [%s]' % (folder, options)
+        
+        res = CreateDiffs(targetDir, folder, options)
+        if res != 0:
+            globals()["LanguageId"] = prevLanguage
+            return res    
+    
+    globals()["LanguageId"] = prevLanguage
+    return 0
+    
+#------------------------------------------------------------------------------
+
+def NLBuilder_ModData(modDirs):
+
+    print ' '
+    print '============================================='   
+    print 'NLBuilder_ModData called'
+    print '=============================================' 
+        
+    #flag as mod build
+    globals()["ModBuild"] = 1
+    
+    #iterate over the mod directories
+    for modDir in modDirs:
+        globals()["modPath"]         = modDir
+        globals()["modName"]         = modPath.replace('\\', '-')
+        globals()["modArtifactsDir"] = os.path.join(artifactsDir, modPath)
+        
+        #ensure artifacts present
+        EnsureArtifactsFolder()
+
+        #verify the blocks                
+        ret = CheckBlocks_Mod()
+        if ret:
+           return ret
+    
+        #do a mod data convert but don't populate cache
+        ret = DataConvert_Mod(LowQuality)
+        if ret:
+            globals()["ModBuild"] = 0
+            return ret
+        
+        #builds non-localised mod packs (anims and rwm fils) by running the game (ie not sounds or strings as these are localised)
+        ret = PacksGame_Mod()
+        if ret:
+            globals()["ModBuild"] = 0
+            return ret
+            
+        #creates *.pack files for the mod but excludes sounds, anims and text
+        ret = PacksPacker_Mod()
+        if ret:
+            globals()["ModBuild"] = 0
+            return ret
+        
+    globals()["ModBuild"] = 0
+    
+    return 0
+    
+#------------------------------------------------------------------------------
+#SKU Builders      
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+
+def Builder_Localise(args):
+
+    print ' '
+    print '============================================='
+    print '%s Builder_Localise called' % (Language)
+    print '=============================================' 
+    
+    ret = 0
+
+    SKULocalised = None
+    
+    # prepare the language assets
+    if os.path.exists(BackupRoot):
+        CleanupFolder(BackupRoot)  
+    
+    try:
+        SKULocalised = CopyLanguageAssets()
+        
+    except Exception, ex:
+        print ex
+        ret = 1
+
+    return ret
+    
+#------------------------------------------------------------------------------
+
+def Builder_Restore(args):
+
+    print ' '
+    print '============================================='
+    print '%s Builder_Restore called' % (Language)
+    print '=============================================' 
+    
+    ret = 0
+    
+    try:
+        RestoreLanguageAssets(SKULocalised)
+        SKULocalised = None
+        
+    except Exception, ex:
+        print ex
+        ret = 1
+
+    return ret
+    
+#------------------------------------------------------------------------------        
+    
+def Builder_LocaliseMods(args):
+
+    print ' '
+    print '============================================='
+    print '%s Builder_LocaliseMods called' % (Language)
+    print '=============================================' 
+        
+    ret = 0
+    
+    #flag as mod build
+    globals()["ModBuild"]             = 1
+    
+    globals()["SKULocalisedMods"]     = [[]]
+    
+    #iterate over the mod directories
+    modIndex                          = 0
+    for modDir in modDirs:
+        globals()["modPath"]          = modDir
+        globals()["modName"]          = modPath.replace('\\', '-')
+        globals()["modArtifactsDir"]  = os.path.join(artifactsDir, modPath)
+        
+        backup_root                   = os.path.join(modPath, BackupRoot)
+        backup_root                   = os.path.join(backup_root, LanguageId)
+       
+        # prepare the language assets
+        if os.path.exists(backup_root):
+            CleanupFolder(backup_root)        
+        
+        try:
+            globals()["SKULocalisedMods"][modIndex] = CopyLanguageAssets()
+            modIndex                                = modIndex + 1
+    
+        except Exception, ex:
+            print ex
+            ret = 1
+   
+    return ret
+    
+#------------------------------------------------------------------------------        
+    
+def Builder_RestoreMods(args):
+ 
+    print ' '
+    print '============================================='
+    print '%s Builder_RestoreMods called' % (Language)
+    print '=============================================' 
+        
+    ret = 0
+    
+    #flag as mod build
+    globals()["ModBuild"]            = 1
+    
+    #iterate over the mod directories
+    modIndex                         = 0
+    for modDir in modDirs:
+        globals()["modPath"]         = modDir
+        globals()["modName"]         = modPath.replace('\\', '-')
+        globals()["modArtifactsDir"] = os.path.join(artifactsDir, modPath)
+        
+        try:
+            RestoreLanguageAssets(globals()["SKULocalisedMods"][modIndex])
+            modIndex                 = modIndex + 1
+    
+        except Exception, ex:
+            print ex
+            ret = 1
+        
+    globals()["SKULocalisedMods"] = [[]]
+    globals()["ModBuild"] = 0            
+   
+    return ret
+    
+#------------------------------------------------------------------------------
+
+def Builder_PackGameData(args):
+   
+    print ' '
+    print '============================================='    
+    print '%s Builder_PackGameData called' % Language
+    print '============================================='    
+    
+    ret = 0
+    
+    try:
+        # build localized pack files
+        ret = PacksLocalized()
+
+    except Exception, ex:
+        print ex
+        ret = 1
+    
+    return ret    
+    
+#------------------------------------------------------------------------------
+
+def Builder_PackModData(modDirs):
+
+    print ' '
+    print '============================================='
+    print '%s Builder_PackModData called' % (Language)
+    print '=============================================' 
+        
+    ret = 0
+    
+    #flag as mod build
+    globals()["ModBuild"] = 1
+    
+    #iterate over the mod directories
+    for modDir in modDirs:
+        globals()["modPath"]         = modDir
+        globals()["modName"]         = modPath.replace('\\', '-')
+        globals()["modArtifactsDir"] = os.path.join(artifactsDir, modPath)
+        
+        #ensure artifacts present
+        EnsureArtifactsFolder()
+        
+        try:
+            ret = PacksLocalized_Mod() or ret
+    
+        except Exception, ex:
+            print ex
+            ret = 1
+            
+    globals()["ModBuild"] = 0
+
+    return ret    
+    
+#------------------------------------------------------------------------------
+
+def Builder_GameData(shouldDif):
+   
+    print ' '
+    print '============================================='    
+    print '%s Builder_GameData called' % Language
+    print '============================================='    
+    
+    ret = 0
+    
+    print r'About to cleanup Folder: %s' % BackupRoot
+    # prepare the language assets
+    if os.path.exists(BackupRoot):
+        CleanupFolder(BackupRoot)
+    print r'Completed cleanup Folder: %s' % BackupRoot
+
+    assets = None
+
+    try:
+        print 'About to copy language assets'
+        assets = CopyLanguageAssets()
+        print 'Completed copy language assets'
+
+        # build localized pack files
+        print 'About to build localized pack files'
+        ret = PacksLocalized()
+        print 'Completed build localized pack files'
+        
+        # ideally would like to have Builder_GameDiff as a seperate builder that follows Builder_GameData, 
+        # while this works fine for the files in FoldersToDiffLoc fmvs will be in a different relative path
+        # compared to reference folder eg Ref: French\data\fmv  New: localization\French\data\fmv.  So rather
+        # than stick a special case in the diff builder it is easier to call it now as all the assest will be
+        # in the retail layout
+        
+        for language, folders in LocFoldersToDif:
+            if language == globals()["LanguageId"]:
+                if shouldDif and ret == 0:
+                    ret = Builder_GameDiff(folders)
+        
+
+    except Exception, ex:
+        print ex
+        ret = 1
+
+    # revert to English
+    print 'About to restore language assets'
+    RestoreLanguageAssets(assets)
+    print 'Completed restore language assets'
+    
+    return ret
+    
+#------------------------------------------------------------------------------
+
+def Builder_GameDiff(difFolders):
+
+    print ' '
+    print '============================================='
+    print '%s Builder_GameDiff called' % Language
+    print '============================================='
+
+    
+    EnsureArtifactsFolder()
+         
+    # setup destination diff folder
+    targetDir = os.path.join(os.getcwd(), r'Diffs\Localised\%s\Patch' % LanguageId)
+    
+    # remove any existing diffs
+    shutil.rmtree(targetDir, True)
+    
+    # create the folder
+    EnsureFolder(targetDir)
+
+    #diff the folders
+    for folder, options in difFolders:
+        print 'Creating diffs for [%s] with options [%s]' % (folder, options)
+        
+        res = CreateDiffs(targetDir, folder, options)
+        if res != 0:
+            return res    
+            
+    #dif localised
+            
+    return 0
+    
+#------------------------------------------------------------------------------
+
+def Builder_ModData(modDirs):
+
+    print ' '
+    print '============================================='
+    print '%s Builder_ModData called' % (Language)
+    print '=============================================' 
+        
+    ret = 0
+        
+    #flag as mod build
+    globals()["ModBuild"] = 1
+    
+    #iterate over the mod directories
+    for modDir in modDirs:
+        globals()["modPath"]         = modDir
+        globals()["modName"]         = modPath.replace('\\', '-')
+        globals()["modArtifactsDir"] = os.path.join(artifactsDir, modPath)
+        
+        #ensure artifacts present
+        EnsureArtifactsFolder()
+        
+        backup_root = os.path.join(modPath, BackupRoot)
+        backup_root = os.path.join(backup_root, LanguageId)
+       
+        # prepare the language assets
+        if os.path.exists(backup_root):
+            CleanupFolder(backup_root)
+    
+        assets = None
+    
+        try:
+            assets = CopyLanguageAssets()
+    
+            # build localized pack files
+            ret = PacksLocalized_Mod() or ret
+    
+        except Exception, ex:
+            print ex
+            ret = 1
+            
+        # revert to English
+        RestoreLanguageAssets(assets)
+        
+    globals()["ModBuild"] = 0
+        
+    return ret
+   
+#------------------------------------------------------------------------------     
+def Builder_GameAndModData(modDirs):
+    
+    print ' '
+    print '============================================='    
+    print '%s Builder_GameAndModData called' % Language
+    print '============================================='    
+    
+    ret = 0
+    
+    print r'About to cleanup Folder: %s' % BackupRoot
+    # prepare the language assets
+    if os.path.exists(BackupRoot):
+        CleanupFolder(BackupRoot)
+    print r'Completed cleanup Folder: %s' % BackupRoot
+
+    assets = None
+
+    try:
+        print 'About to copy language assets'
+        assets = CopyLanguageAssets()
+        print 'Completed copy language assets'
+
+        # build localized pack files
+        print 'About to build localized pack files'
+        ret = PacksLocalized()
+        print 'Completed build localized pack files'
+        
+        ret = Builder_ModData(modDirs)
+                
+        for language, folders in LocFoldersToDif:
+            if language == globals()["LanguageId"]:
+                if ret == 0:
+                    ret = Builder_GameDiff(folders)
+
+    except Exception, ex:
+        print ex
+        ret = 1
+
+    # revert to English
+    print 'About to restore language assets'
+    RestoreLanguageAssets(assets)
+    print 'Completed restore language assets'
+    
+    return ret
+    
+#------------------------------------------------------------------------------
+
+def Builder_ArchiveLocAssets(modDirs):
+
+    print ' '
+    print '============================================='
+    print '%s Builder_ArchiveLocAssets called' % (LanguageId)
+    print '=============================================' 
+        
+    #clear any existing files in destination
+    destination = r'localised_assets\%s' % LanguageId
+    shutil.rmtree(destination, 1)    
+    
+    
+    #move localised game assets only, no need to move diffs as they are already localised
+    locGameData  = []
+    locGameData += glob.glob(r'data\sounds\*.dat')
+    locGameData += glob.glob(r'data\sounds\*.idx')
+    locGameData += glob.glob(r'packs\localized.pack')
+    
+    #move localised data
+    for source in locGameData:
+        
+        destination = r'localised_assets\%s\%s' % (LanguageId, source)
+        if os.path.exists(source):
+            print "archiving localised game data from %s to %s" % (source, destination)
+            os.renames(source, destination)
+
+    #iterate over the mod directories (currently mods are new so diffs for them)
+    for modDir in modDirs:
+        
+        #move mod game assets
+        locModData  = []
+        locModData += glob.glob(r'%s\data\sounds\*.dat'    % modDir)
+        locModData += glob.glob(r'%s\data\sounds\*.idx'    % modDir)
+        locModData += glob.glob(r'%s\packs\localized.pack' % modDir)
+        
+        for source in locModData:
+            destination = r'.\localised_assets\%s\%s' % (LanguageId, source)
+            if os.path.exists(source):
+                print "archiving localised mod data from %s to %s" % (source, destination)
+                os.renames(source, destination)  
+        
+    
+    return 0
+    
+#------------------------------------------------------------------------------
+#SKU PostBuilders      
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+
+def PostBuilder_Installer(installers):
+
+    print ' '
+    print '============================================='
+    print '%s PostBuilder_Installer called.  Product code is %s, distribution source is %s' % (Language, ProductCode, DistribSource)
+    print '=============================================' 
+    
+    EnsureArtifactsFolder()
+    
+    ret = 0
+    
+    #build the InstallShield library
+    ret = BuildISLib()
+    if ret != 0:
+         return ret
+
+    for installer, project, languages in installers:
+        
+        # build the installer, the target directory is the language but for Steam, D2D and DR we have to use the dstsrc else they will overwrite the last English build
+        targetDir = os.path.join(artifactsDir, project)
+        targetDir = os.path.join(targetDir, installer)
+        if DistribSource != '':
+            targetDir = os.path.join(targetDir, DistribSource)
+        language = LanguageId
+        if language == 'American':
+            language = 'English'
+        ret = CreateInstallerEx(installer, project, targetDir, releaseVersion, ProductCode, DistribSource)
+        if ret:
+           return ret
+        
+        ret = PostBuilder_MoveAssets(targetDir, languages)
+    
+    return ret
+    
+#------------------------------------------------------------------------------
+
+def PostBuilder_DiskLauncher(args):
+
+    print ' '
+    print '============================================='
+    print 'PostBuilder_DiskLauncher called'
+    print '=============================================' 
+
+    global Language, LanguageId
+    Language        = 'English'
+    LanguageId      = 'English'
+    CreateLauncher('Kingdoms')
+    
+    return 0
+    
+#------------------------------------------------------------------------------
+
+def PostBuilder_MoveAssets(InstallerPath, Languages):
+
+    print ' '
+    print '============================================='
+    print 'PostBuilder_MoveAssets called - passed in Installer path %s' % InstallerPath
+    print '=============================================' 
+
+    
+    # we don't want to move non-localised diffs for some languages (eg for Japanese all 
+    # assets are treated as localised so no point moving NL assets - just makes installer bigger)
+    ShouldMoveNLDiffs = 0
+    for language in Languages:
+        for nlmoveLang, nlmoveFlag in ShouldMoveNonLocFolders:
+            if language == nlmoveLang:
+                if nlmoveFlag == 1:
+                    ShouldMoveNLDiffs = 1
+    
+                    
+     #copy non-localised diffs
+    if ShouldMoveNLDiffs == 1:
+        for mod in Mods:
+            source = r'Diffs\Non Localised\Patch\mods\%s' % mod
+            destination = os.path.join(InstallerPath, r'Disk Images\Disk1\main\%s\Patch' % mod)
+        
+            if os.path.exists(source):
+                EnsureFolder(destination)
+                print 'copying from %s to %s' % (source, destination)
+                try:
+                    shutil.rmtree(destination, 1)   
+                    shutil.copytree(source, destination)
+                except shutil.Error, e:
+                    print ('Error copying %s to %s: %s' % (source, destination, e))        
+    
+            
+    #copy non-localised diffs and exes
+    for language in Languages:
+        print 'copying localisation diffs for %s' % language
+        if language == 'American':
+            language = 'English'
+            
+        for mod in Mods:
+            source      = os.path.join(r'Diffs\Localised', language, 'Patch', 'mods', mod)
+            destination = os.path.join(InstallerPath, r'Disk Images\Disk1\main', mod, language, 'Patch')
+            
+            if os.path.exists(source):
+                EnsureFolder(destination)
+                print 'copying from %s to %s' % (source, destination)
+                try:
+                    shutil.rmtree(destination, 1)   
+                    shutil.copytree(source, destination)
+                except shutil.Error, e:
+                    print ('Error copying %s to %s: %s' % (source, destination, e))
+
+    # copy modified world data files
+    for mod in Mods:
+        folder = os.getcwd()
+        source      = os.path.join(folder, 'mods', mod, 'data', 'world')
+        reference   = os.path.join(folder, ReferenceVersion, Languages[0], 'mods', mod, 'data', 'world')
+        destination = os.path.join(folder, InstallerPath, r'Disk Images\Disk1\main', mod, 'world')
+        
+        print '============================================='
+        print '    World Files: source = %s' % source
+        print '    World Files: reference = %s' % reference
+        print '    World Files: destination = %s' % destination
+        print '============================================='
+       
+        os.chdir(source)
+    
+        for root, dirs, files  in os.walk('.'):
+            for f in files:
+                # compare against reference
+                s = os.path.join(source, root, f)
+                r = os.path.join(reference, root, f)
+                
+                if not os.path.exists(r) or not filecmp.cmp(s, r, False):
+                    # copy into destination
+                    d = os.path.join(destination, root, f)
+                    targetPath = os.path.join(destination, root)
+                                            
+                    print 'copying from %s to %s (target path = %s, reference file = %s)' % (s, d, targetPath, r)
+                    EnsureFolder(targetPath)
+                    try:
+                        shutil.copyfile(s, d)
+                    except shutil.Error, e:
+                        print ('Error copying %s to %s: %s' % (source, destination, e))
+                            
+        os.chdir(folder)
+    return 0
+    
+#------------------------------------------------------------------------------
+
+def PostBuilder_Kingdoms_Installer(installers):
+
+    global Language, LanguageId
+
+    print ' '
+    print '============================================='
+    print '%s PostBuilder_Kingdoms_Installer called.  Product code is %s, distribution source is %s' % (Language, ProductCode, DistribSource)
+    print '=============================================' 
+    
+    EnsureArtifactsFolder()
+    
+    ret = 0
+    
+    #build the InstallShield library
+    ret = BuildISLib()
+    if ret != 0:
+         return ret
+
+    count = 0
+    for installer, project, languages in installers:
+        count = count + 1
+        
+        for installerLan in languages:
+            targetDir = artifactsDir
+            LanguageId = installerLan
+            if installerLan == 'English':
+                Language = None
+            else:
+                Language = installerLan
+                
+            english  = r'localised_assets\English'
+            american = r'localised_assets\American'
+            backup   = os.path.join(BackupRoot, english)                
+         
+            assets = CopyLanguageAssets()
+                   
+            if installerLan == 'American':
+            
+                # American is not a seperate language so we trick the installers into thinking it is English
+                print 'Switching English localised_assets for American'
+                
+                if os.path.exists(backup):
+                    shutil.rmtree(backup)              
+            
+                if os.path.exists(english):
+                    print 'renaming %s to %s' % (english, backup)
+                    os.renames(english, backup)
+                print 'renaming %s to %s' % (american, english)
+                os.renames(american, english)      
+                
+                targetDir = os.path.join(targetDir, Language)
+                Language  = 'English'
+            
+            # build the installer, the target directory is the language but for Steam, D2D and DR we have to use the dstsrc else they will overwrite the last English build
+            targetDir   = os.path.join(targetDir, project)
+            targetDir   = os.path.join(targetDir, installer)
+            lessDistSrc = targetDir
+            if DistribSource != '':
+                targetDir = os.path.join(targetDir, DistribSource)
+            ret = CreateInstallerEx(installer, project, targetDir, releaseVersion, ProductCode, DistribSource)
+            if ret:
+               return ret
+               
+            
+            tokens  = installer.split('_')
+            name    = tokens[0]
+            
+            # bit of a hack, expects 'kingdoms' 'kingdoms_teutonic' etc, will fall in below only for 'kingdoms'
+            print 'comparing %s to %s' % (name, installer)
+            if name == installer:
+                ret = PostBuilder_Kingdoms_MoveInstallers(project, lessDistSrc)           
+                if ret:
+                   return ret    
+                   
+            Language = installerLan   # restore English override to American so restore selects correct backup dir
+            
+            # Restore English backup
+            if installerLan == 'American':
+                if os.path.exists(backup):
+                    os.renames(english, american)
+                    os.renames(backup, english)
+                
+            RestoreLanguageAssets(assets)    
+            
+    
+    return ret    
+    
+#------------------------------------------------------------------------------
+
+def PostBuilder_Kingdoms_MoveInstallers(Project, InstallerPath):
+
+    print ' '
+    print '============================================='
+    print 'PostBuilder_Kingdoms_MoveAssets called - passed in Installer path %s and project %s' % (InstallerPath, Project)
+    print '=============================================' 
+
+    tokens  = Project.split('_')
+    project = tokens[0]
+    
+    # copy in update 2
+    src = os.path.join(os.path.join(os.path.join(Update2, project + r'_1_02\patch_universal'), DistribSource), r'Disk Images\Disk1')
+    dst = os.path.join(os.path.join(InstallerPath, DistribSource), r'Disk Images\Disk1\Update2')
+    CopyDirectory(src, dst)
+        
+    # copy in update 3
+    src = os.path.join(os.path.join(os.path.join(Update3, project + r'_1_02\patch_universal'), DistribSource), r'Disk Images\Disk1')
+    dst = os.path.join(os.path.join(InstallerPath, DistribSource), r'Disk Images\Disk1\Update3')
+    CopyDirectory(src, dst)      
+    
+    # copy installer pref into kingdoms
+    dst = os.path.join(os.path.join(InstallerPath, DistribSource), r'Disk Images\Disk1')
+    CopyDirectory(AddInstallFiles, dst)
+    
+    # move the americas installers
+    src = os.path.join(os.path.join(InstallerPath + '_americas', DistribSource), r'Disk Images\Disk1')
+    dst = os.path.join(os.path.join(InstallerPath, DistribSource), r'Disk Images\Disk1\americas')
+    MoveDirectory(src, dst)
+    
+    # copy installer pref into americas
+    CopyDirectory(AddInstallFilesMod, dst)
+        
+    # move the britannia installers
+    src = os.path.join(os.path.join(InstallerPath + '_british_isles', DistribSource), r'Disk Images\Disk1')
+    dst = os.path.join(os.path.join(InstallerPath, DistribSource), r'Disk Images\Disk1\britannia')
+    MoveDirectory(src, dst)
+    
+    # copy installer pref into britannia
+    CopyDirectory(AddInstallFilesMod, dst)
+        
+    # move the crusades installers
+    src = os.path.join(os.path.join(InstallerPath + '_crusades', DistribSource), r'Disk Images\Disk1')
+    dst = os.path.join(os.path.join(InstallerPath, DistribSource), r'Disk Images\Disk1\crusades')
+    MoveDirectory(src, dst)
+    
+    # copy installer pref into crusades
+    CopyDirectory(AddInstallFilesMod, dst)  
+        
+    # move the teutonic installers
+    src = os.path.join(os.path.join(InstallerPath + '_teutonic', DistribSource), r'Disk Images\Disk1')
+    dst = os.path.join(os.path.join(InstallerPath, DistribSource), r'Disk Images\Disk1\teutonic')
+    MoveDirectory(src, dst)    
+    
+    # copy installer pref into teutonic
+    CopyDirectory(AddInstallFilesMod, dst) 
+        
+    return 0   
+   
+    
+    
+    
+#------------------------------------------------------------------------------
+#SKU Tables  
+#------------------------------------------------------------------------------
+#NLBuilder = Non-localised builder
+#Game      = Medieval 2 (ie not any of the mod campaigns)
+
+Mods            = [r'americas', r'british_isles', r'crusades', r'teutonic']
+ModDirs         = [r'mods\americas', r'mods\british_isles', r'mods\crusades', r'mods\teutonic']
+
+                                    
+Kingdoms_Gold_Installers_EAFIGS_RPC = [ 
+                                    [r'kingdoms_americas',      'English_1_00',     ['English', 'American']], 
+                                    [r'kingdoms_british_isles', 'English_1_00',     ['English', 'American']], 
+                                    [r'kingdoms_crusades',      'English_1_00',     ['English', 'American']], 
+                                    [r'kingdoms_teutonic',      'English_1_00',     ['English', 'American']],
+                                    [r'kingdoms',               'English_1_00',     ['English', 'American']],
+                                    [r'kingdoms_americas',      'French_1_00',      ['French']], 
+                                    [r'kingdoms_british_isles', 'French_1_00',      ['French']], 
+                                    [r'kingdoms_crusades',      'French_1_00',      ['French']], 
+                                    [r'kingdoms_teutonic',      'French_1_00',      ['French']],
+                                    [r'kingdoms',               'French_1_00',      ['French']],
+                                    [r'kingdoms_americas',      'Italian_1_00',     ['Italian']], 
+                                    [r'kingdoms_british_isles', 'Italian_1_00',     ['Italian']], 
+                                    [r'kingdoms_crusades',      'Italian_1_00',     ['Italian']], 
+                                    [r'kingdoms_teutonic',      'Italian_1_00',     ['Italian']],
+                                    [r'kingdoms',               'Italian_1_00',     ['Italian']],
+                                    [r'kingdoms_americas',      'German_1_00',      ['German']], 
+                                    [r'kingdoms_british_isles', 'German_1_00',      ['German']], 
+                                    [r'kingdoms_crusades',      'German_1_00',      ['German']], 
+                                    [r'kingdoms_teutonic',      'German_1_00',      ['German']],
+                                    [r'kingdoms',               'German_1_00',      ['German']],   
+                                    [r'kingdoms_americas',      'Spanish_1_00',     ['Spanish']], 
+                                    [r'kingdoms_british_isles', 'Spanish_1_00',     ['Spanish']], 
+                                    [r'kingdoms_crusades',      'Spanish_1_00',     ['Spanish']], 
+                                    [r'kingdoms_teutonic',      'Spanish_1_00',     ['Spanish']],
+                                    [r'kingdoms',               'Spanish_1_00',     ['Spanish']],   
+                                    [r'kingdoms_americas',      'Russian_1_00',     ['Russian']], 
+                                    [r'kingdoms_british_isles', 'Russian_1_00',     ['Russian']], 
+                                    [r'kingdoms_crusades',      'Russian_1_00',     ['Russian']], 
+                                    [r'kingdoms_teutonic',      'Russian_1_00',     ['Russian']],
+                                    [r'kingdoms',               'Russian_1_00',     ['Russian']],  
+                                    [r'kingdoms_americas',      'Polish_1_00',      ['Polish']], 
+                                    [r'kingdoms_british_isles', 'Polish_1_00',      ['Polish']], 
+                                    [r'kingdoms_crusades',      'Polish_1_00',      ['Polish']], 
+                                    [r'kingdoms_teutonic',      'Polish_1_00',      ['Polish']],
+                                    [r'kingdoms',               'Polish_1_00',      ['Polish']],  
+                                    [r'kingdoms_americas',      'Czech_1_00',       ['Czech']], 
+                                    [r'kingdoms_british_isles', 'Czech_1_00',       ['Czech']], 
+                                    [r'kingdoms_crusades',      'Czech_1_00',       ['Czech']], 
+                                    [r'kingdoms_teutonic',      'Czech_1_00',       ['Czech']],
+                                    [r'kingdoms',               'Czech_1_00',       ['Czech']],                                                                                                                                            
+                                    [r'kingdoms_americas',      'EFIGS_1_00',       ['English']], 
+                                    [r'kingdoms_british_isles', 'EFIGS_1_00',       ['English']], 
+                                    [r'kingdoms_crusades',      'EFIGS_1_00',       ['English']], 
+                                    [r'kingdoms_teutonic',      'EFIGS_1_00',       ['English']],
+                                    [r'kingdoms',               'EFIGS_1_00',       ['English']],      
+                                    [r'kingdoms_americas',      'RPC_1_00',         ['Russian']], 
+                                    [r'kingdoms_british_isles', 'RPC_1_00',         ['Russian']], 
+                                    [r'kingdoms_crusades',      'RPC_1_00',         ['Russian']], 
+                                    [r'kingdoms_teutonic',      'RPC_1_00',         ['Russian']],
+                                    [r'kingdoms',               'RPC_1_00',         ['Russian']]                                                                                                                                        
+                                  ]   
+                                  
+Kingdoms_Gold_Installers_EAFIGS_RPC_J = [ 
+                                    [r'kingdoms_americas',      'English_1_00',     ['English', 'American']], 
+                                    [r'kingdoms_british_isles', 'English_1_00',     ['English', 'American']], 
+                                    [r'kingdoms_crusades',      'English_1_00',     ['English', 'American']], 
+                                    [r'kingdoms_teutonic',      'English_1_00',     ['English', 'American']],
+                                    [r'kingdoms',               'English_1_00',     ['English', 'American']],
+                                    [r'kingdoms_americas',      'French_1_00',      ['French']], 
+                                    [r'kingdoms_british_isles', 'French_1_00',      ['French']], 
+                                    [r'kingdoms_crusades',      'French_1_00',      ['French']], 
+                                    [r'kingdoms_teutonic',      'French_1_00',      ['French']],
+                                    [r'kingdoms',               'French_1_00',      ['French']],
+                                    [r'kingdoms_americas',      'Italian_1_00',     ['Italian']], 
+                                    [r'kingdoms_british_isles', 'Italian_1_00',     ['Italian']], 
+                                    [r'kingdoms_crusades',      'Italian_1_00',     ['Italian']], 
+                                    [r'kingdoms_teutonic',      'Italian_1_00',     ['Italian']],
+                                    [r'kingdoms',               'Italian_1_00',     ['Italian']],
+                                    [r'kingdoms_americas',      'German_1_00',      ['German']], 
+                                    [r'kingdoms_british_isles', 'German_1_00',      ['German']], 
+                                    [r'kingdoms_crusades',      'German_1_00',      ['German']], 
+                                    [r'kingdoms_teutonic',      'German_1_00',      ['German']],
+                                    [r'kingdoms',               'German_1_00',      ['German']],   
+                                    [r'kingdoms_americas',      'Spanish_1_00',     ['Spanish']], 
+                                    [r'kingdoms_british_isles', 'Spanish_1_00',     ['Spanish']], 
+                                    [r'kingdoms_crusades',      'Spanish_1_00',     ['Spanish']], 
+                                    [r'kingdoms_teutonic',      'Spanish_1_00',     ['Spanish']],
+                                    [r'kingdoms',               'Spanish_1_00',     ['Spanish']],   
+                                    [r'kingdoms_americas',      'Russian_1_00',     ['Russian']], 
+                                    [r'kingdoms_british_isles', 'Russian_1_00',     ['Russian']], 
+                                    [r'kingdoms_crusades',      'Russian_1_00',     ['Russian']], 
+                                    [r'kingdoms_teutonic',      'Russian_1_00',     ['Russian']],
+                                    [r'kingdoms',               'Russian_1_00',     ['Russian']],  
+                                    [r'kingdoms_americas',      'Polish_1_00',      ['Polish']], 
+                                    [r'kingdoms_british_isles', 'Polish_1_00',      ['Polish']], 
+                                    [r'kingdoms_crusades',      'Polish_1_00',      ['Polish']], 
+                                    [r'kingdoms_teutonic',      'Polish_1_00',      ['Polish']],
+                                    [r'kingdoms',               'Polish_1_00',      ['Polish']],  
+                                    [r'kingdoms_americas',      'Czech_1_00',       ['Czech']], 
+                                    [r'kingdoms_british_isles', 'Czech_1_00',       ['Czech']], 
+                                    [r'kingdoms_crusades',      'Czech_1_00',       ['Czech']], 
+                                    [r'kingdoms_teutonic',      'Czech_1_00',       ['Czech']],
+                                    [r'kingdoms',               'Czech_1_00',       ['Czech']],                                                                                                                                            
+                                    [r'kingdoms_americas',      'EFIGS_1_00',       ['English']], 
+                                    [r'kingdoms_british_isles', 'EFIGS_1_00',       ['English']], 
+                                    [r'kingdoms_crusades',      'EFIGS_1_00',       ['English']], 
+                                    [r'kingdoms_teutonic',      'EFIGS_1_00',       ['English']],
+                                    [r'kingdoms',               'EFIGS_1_00',       ['English']],      
+                                    [r'kingdoms_americas',      'RPC_1_00',         ['Russian']], 
+                                    [r'kingdoms_british_isles', 'RPC_1_00',         ['Russian']], 
+                                    [r'kingdoms_crusades',      'RPC_1_00',         ['Russian']], 
+                                    [r'kingdoms_teutonic',      'RPC_1_00',         ['Russian']],
+                                    [r'kingdoms',               'RPC_1_00',         ['Russian']], 
+                                    [r'kingdoms_americas',      'Japanese_1_00',    ['Japanese']],             
+                                    [r'kingdoms_british_isles', 'Japanese_1_00',    ['Japanese']], 
+                                    [r'kingdoms_crusades',      'Japanese_1_00',    ['Japanese']], 
+                                    [r'kingdoms_teutonic',      'Japanese_1_00',    ['Japanese']],
+                                    [r'kingdoms',               'Japanese_1_00',    ['Japanese']]                                     
+                                  ]                                   
+                                  
+Kingdoms_Gold_Installers_EAFIGS = [ 
+                                    [r'kingdoms_americas',      'English_1_00',     ['English', 'American']], 
+                                    [r'kingdoms_british_isles', 'English_1_00',     ['English', 'American']], 
+                                    [r'kingdoms_crusades',      'English_1_00',     ['English', 'American']], 
+                                    [r'kingdoms_teutonic',      'English_1_00',     ['English', 'American']],
+                                    [r'kingdoms',               'English_1_00',     ['English', 'American']],
+                                    [r'kingdoms_americas',      'French_1_00',      ['French']], 
+                                    [r'kingdoms_british_isles', 'French_1_00',      ['French']], 
+                                    [r'kingdoms_crusades',      'French_1_00',      ['French']], 
+                                    [r'kingdoms_teutonic',      'French_1_00',      ['French']],
+                                    [r'kingdoms',               'French_1_00',      ['French']],
+                                    [r'kingdoms_americas',      'Italian_1_00',     ['Italian']], 
+                                    [r'kingdoms_british_isles', 'Italian_1_00',     ['Italian']], 
+                                    [r'kingdoms_crusades',      'Italian_1_00',     ['Italian']], 
+                                    [r'kingdoms_teutonic',      'Italian_1_00',     ['Italian']],
+                                    [r'kingdoms',               'Italian_1_00',     ['Italian']],
+                                    [r'kingdoms_americas',      'German_1_00',      ['German']], 
+                                    [r'kingdoms_british_isles', 'German_1_00',      ['German']], 
+                                    [r'kingdoms_crusades',      'German_1_00',      ['German']], 
+                                    [r'kingdoms_teutonic',      'German_1_00',      ['German']],
+                                    [r'kingdoms',               'German_1_00',      ['German']],   
+                                    [r'kingdoms_americas',      'Spanish_1_00',     ['Spanish']], 
+                                    [r'kingdoms_british_isles', 'Spanish_1_00',     ['Spanish']], 
+                                    [r'kingdoms_crusades',      'Spanish_1_00',     ['Spanish']], 
+                                    [r'kingdoms_teutonic',      'Spanish_1_00',     ['Spanish']],
+                                    [r'kingdoms',               'Spanish_1_00',     ['Spanish']],                                                                                                                                             
+                                    [r'kingdoms_americas',      'EFIGS_1_00',       ['English']], 
+                                    [r'kingdoms_british_isles', 'EFIGS_1_00',       ['English']], 
+                                    [r'kingdoms_crusades',      'EFIGS_1_00',       ['English']], 
+                                    [r'kingdoms_teutonic',      'EFIGS_1_00',       ['English']],
+                                    [r'kingdoms',               'EFIGS_1_00',       ['English']]                                                                                                                                       
+                                  ]    
+                                  
+Kingdoms_Gold_Installers_RPC = [ 
+                                    [r'kingdoms_americas',      'Russian_1_00',     ['Russian']], 
+                                    [r'kingdoms_british_isles', 'Russian_1_00',     ['Russian']], 
+                                    [r'kingdoms_crusades',      'Russian_1_00',     ['Russian']], 
+                                    [r'kingdoms_teutonic',      'Russian_1_00',     ['Russian']],
+                                    [r'kingdoms',               'Russian_1_00',     ['Russian']],  
+                                    [r'kingdoms_americas',      'Polish_1_00',      ['Polish']], 
+                                    [r'kingdoms_british_isles', 'Polish_1_00',      ['Polish']], 
+                                    [r'kingdoms_crusades',      'Polish_1_00',      ['Polish']], 
+                                    [r'kingdoms_teutonic',      'Polish_1_00',      ['Polish']],
+                                    [r'kingdoms',               'Polish_1_00',      ['Polish']],  
+                                    [r'kingdoms_americas',      'Czech_1_00',       ['Czech']], 
+                                    [r'kingdoms_british_isles', 'Czech_1_00',       ['Czech']], 
+                                    [r'kingdoms_crusades',      'Czech_1_00',       ['Czech']], 
+                                    [r'kingdoms_teutonic',      'Czech_1_00',       ['Czech']],
+                                    [r'kingdoms',               'Czech_1_00',       ['Czech']],                                                                                                                                                 
+                                    [r'kingdoms_americas',      'RPC_1_00',         ['Russian']], 
+                                    [r'kingdoms_british_isles', 'RPC_1_00',         ['Russian']], 
+                                    [r'kingdoms_crusades',      'RPC_1_00',         ['Russian']], 
+                                    [r'kingdoms_teutonic',      'RPC_1_00',         ['Russian']],
+                                    [r'kingdoms',               'RPC_1_00',         ['Russian']]                                                                                                                                        
+                                  ]                                                                          
+                                  
+Kingdoms_Gold_Installers_J = [ 
+                                    [r'kingdoms_americas',      'Japanese_1_00',    ['Japanese']],             
+                                    [r'kingdoms_british_isles', 'Japanese_1_00',    ['Japanese']], 
+                                    [r'kingdoms_crusades',      'Japanese_1_00',    ['Japanese']], 
+                                    [r'kingdoms_teutonic',      'Japanese_1_00',    ['Japanese']],
+                                    [r'kingdoms',               'Japanese_1_00',    ['Japanese']] 
+                                  ]  
+                         
+Kingdoms_Patch_Installers_EFIGS = [ 
+                                    [r'kingdoms_patch',         'EFIGS_1_05',       ['English', 'French', 'Italian', 'German', 'Spanish']],                                                                                                                                       
+                                    [r'kingdoms_patch',         'English_1_05',     ['English']],                                                                                                                                       
+                                    [r'kingdoms_patch',         'French_1_05',      ['French']],                                                                                                                                       
+                                    [r'kingdoms_patch',         'Italian_1_05',     ['Italian']],                                                                                                                                       
+                                    [r'kingdoms_patch',         'German_1_05',      ['German']],                                                                                                                                       
+                                    [r'kingdoms_patch',         'Spanish_1_05',     ['Spanish']]                                                                                                                                       
+                                  ]    
+                                  
+Kingdoms_Patch_Installers_RPC = [ 
+                                    [r'kingdoms_patch',         'RPC_1_05',         ['Russian', 'Polish', 'Czech']],                                                                                                                                        
+                                    [r'kingdoms_patch',         'Russian_1_05',     ['Russian']],                                                                                                                                        
+                                    [r'kingdoms_patch',         'Polish_1_05',      ['Polish']],                                                                                                                                        
+                                    [r'kingdoms_patch',         'Czech_1_05',       ['Czech']]                                                                                                                                        
+                                  ]                                                                          
+                                  
+Kingdoms_Patch_Installers_J = [ 
+                                    [r'kingdoms_patch',         'Japanese_1_05',    ['Japanese']] 
+                                  ]  
+                                          
+Kingdoms_Patch_Installers_E = [ 
+                                    [r'kingdoms_patch',         'English_1_05',     ['English']]                                                                                                                                       
+                                  ]    
+                                  
+SKULanguages    = [
+                    ['Kingdoms_Gold-EAFIGS_RPC',        ['English', 'American', 'French', 'Italian', 'German', 'Spanish', 'Russian', 'Polish', 'Czech']],
+                    ['Kingdoms_Gold-EAFIGS_RPC_J',      ['English', 'American', 'French', 'Italian', 'German', 'Spanish', 'Russian', 'Polish', 'Czech', 'Japanese']],
+                    ['Kingdoms_Gold-EAFIGS',            ['English', 'American', 'French', 'Italian', 'German', 'Spanish']],
+                    ['Kingdoms_Gold-E',            		['English']],					
+                    ['Kingdoms_Gold-RPC',               ['Russian', 'Polish', 'Czech']],
+                    ['Kingdoms_Gold-J',                 ['Japanese']],
+                    ['Kingdoms_Patch-EFIGS',            ['English', 'French', 'Italian', 'German', 'Spanish']],
+                    ['Kingdoms_Patch-RPC',              ['Russian', 'Polish', 'Czech']],
+                    ['Kingdoms_Patch-J',                ['Japanese']],
+                    ['Kingdoms_Patch-E',                ['English']]
+                  ]
+                   
+SKUPreBuilders  = [
+                    ['Kingdoms_Gold-EAFIGS_RPC',        [[SetKingdomsExe, []], [NLBuilder_GameData,[]], [NLBuilder_ModData, ModDirs]]],                    
+                    ['Kingdoms_Gold-EAFIGS_RPC_J',      [[SetKingdomsExe, []], [NLBuilder_GameData,[]], [NLBuilder_ModData, ModDirs]]],
+                    ['Kingdoms_Gold-EAFIGS',            [[SetKingdomsExe, []], [NLBuilder_GameData,[]], [NLBuilder_ModData, ModDirs]]],
+					['Kingdoms_Gold-E',            		[[SetKingdomsExe, []], [NLBuilder_GameData,[]], [NLBuilder_ModData, ModDirs]]],					
+                    ['Kingdoms_Gold-RPC',               [[SetKingdomsExe, []], [NLBuilder_GameData,[]], [NLBuilder_ModData, ModDirs]]],
+                    ['Kingdoms_Gold-J',                 [[SetKingdomsExe, []], [NLBuilder_GameData,[]], [NLBuilder_ModData, ModDirs]]],
+                    ['Kingdoms_Patch-EFIGS',            [[SetKingdomsExe, []], [NLBuilder_GameData,[]], [NLBuilder_ModData, ModDirs], [NLBuilder_GameDiff,[]]]],
+                    ['Kingdoms_Patch-RPC',              [[SetKingdomsExe, []], [NLBuilder_GameData,[]], [NLBuilder_ModData, ModDirs], [NLBuilder_GameDiff,[]]]],
+                    ['Kingdoms_Patch-J',                [[SetKingdomsExe, []], [NLBuilder_GameData,[]], [NLBuilder_ModData, ModDirs], [NLBuilder_GameDiff,[]]]],
+                    ['Kingdoms_Patch-E',                [[SetKingdomsExe, []], [NLBuilder_GameData,[]], [NLBuilder_ModData, ModDirs], [NLBuilder_GameDiff,[]]]]
+                  ]      
+                   
+SKUBuilders     = [
+                    ['Kingdoms_Gold-EAFIGS_RPC',        [[Builder_GameAndModData, ModDirs], [Builder_ArchiveLocAssets, ModDirs]]],                    
+                    ['Kingdoms_Gold-EAFIGS_RPC_J',      [[Builder_GameAndModData, ModDirs], [Builder_ArchiveLocAssets, ModDirs]]], 
+                    ['Kingdoms_Gold-EAFIGS',            [[Builder_GameAndModData, ModDirs], [Builder_ArchiveLocAssets, ModDirs]]],
+                    ['Kingdoms_Gold-E',		            [[Builder_GameAndModData, ModDirs], [Builder_ArchiveLocAssets, ModDirs]]],
+                    ['Kingdoms_Gold-RPC',               [[Builder_GameAndModData, ModDirs], [Builder_ArchiveLocAssets, ModDirs]]],
+                    ['Kingdoms_Gold-J',                 [[Builder_GameAndModData, ModDirs], [Builder_ArchiveLocAssets, ModDirs]]],
+                    ['Kingdoms_Patch-EFIGS',            [[Builder_GameAndModData, ModDirs], [Builder_ArchiveLocAssets, ModDirs]]],
+                    ['Kingdoms_Patch-RPC',               [[Builder_GameAndModData, ModDirs], [Builder_ArchiveLocAssets, ModDirs]]],
+                    ['Kingdoms_Patch-J',                 [[Builder_GameAndModData, ModDirs], [Builder_ArchiveLocAssets, ModDirs]]],
+                    ['Kingdoms_Patch-E',                 [[Builder_GameAndModData, ModDirs], [Builder_ArchiveLocAssets, ModDirs]]]         
+                  ]        
+                  
+SKUPostBuilders = [
+                    ['Kingdoms_Gold-EAFIGS_RPC',        [[PostBuilder_Kingdoms_Installer, Kingdoms_Gold_Installers_EAFIGS_RPC],   [PostBuilder_DiskLauncher, []]]],                    
+                    ['Kingdoms_Gold-EAFIGS_RPC_J',      [[PostBuilder_Kingdoms_Installer, Kingdoms_Gold_Installers_EAFIGS_RPC_J], [PostBuilder_DiskLauncher, []]]], 
+                    ['Kingdoms_Gold-EAFIGS',            [[PostBuilder_Kingdoms_Installer, Kingdoms_Gold_Installers_EAFIGS],       [PostBuilder_DiskLauncher, []]]],
+                    ['Kingdoms_Gold-E',            		[[PostBuilder_Kingdoms_Installer, Kingdoms_Gold_Installers_EAFIGS],       [PostBuilder_DiskLauncher, []]]],
+                    ['Kingdoms_Gold-RPC',               [[PostBuilder_Kingdoms_Installer, Kingdoms_Gold_Installers_RPC],          [PostBuilder_DiskLauncher, []]]],
+                    ['Kingdoms_Gold-J',                 [[PostBuilder_Kingdoms_Installer, Kingdoms_Gold_Installers_J],            [PostBuilder_DiskLauncher, []]]],
+                    ['Kingdoms_Patch-EFIGS',            [[PostBuilder_Installer, Kingdoms_Patch_Installers_EFIGS]]],
+                    ['Kingdoms_Patch-RPC',              [[PostBuilder_Installer, Kingdoms_Patch_Installers_RPC]]],
+                    ['Kingdoms_Patch-J',                [[PostBuilder_Installer, Kingdoms_Patch_Installers_J]]],
+                    ['Kingdoms_Patch-E',                [[PostBuilder_Installer, Kingdoms_Patch_Installers_E]]]
+                  ]     
+                                                          
+                  #                                     Product code  |  Distribution source
+SKUInstallerKeys = [
+                    ['Kingdoms_Gold-EAFIGS_RPC',        [['',       'retail']]],                   
+                    ['Kingdoms_Gold-EAFIGS_RPC_J',      [['',       'retail']]], 
+                    ['Kingdoms_Gold-EAFIGS',            [['',       'retail']]],
+                    ['Kingdoms_Gold-E',		            [['',       'retail']]],					
+                    ['Kingdoms_Gold-RPC',               [['',       'retail']]],
+                    ['Kingdoms_Gold-J',                 [['',       'retail']]],
+                    ['Kingdoms_Patch-EFIGS',            [['',       'retail']]],
+                    ['Kingdoms_Patch-RPC',               [['',       'retail']]],
+                    ['Kingdoms_Patch-J',                 [['',       'retail']]],
+                    ['Kingdoms_Patch-E',                 [['',       'retail']]]					
+                   ]   
+                   
+#------------------------------------------------------------------------------
+  
+def CodeTest():
+    CopyDirectory(r'Z:\Builds\Medieval 2\Kingdoms\AdditionalInstallerFiles', r'LOCAL_BUILD_ARTIFACTS\English_1_00\kingdoms\retail\Disk Images\Disk1')
+    return 0                    
+    
+#------------------------------------------------------------------------------
+#By the time this called, code has been built (debug, release, release_rd, retail game, and release and debug tools, and unpacker and launcher)
+def CreateKingdomsSKU():
+   
+    startMark = time.clock()
+
+    #find SKU's index for use with the parrellel arrays
+    found    = 0
+    for SKULang in SKULanguages:
+        if SKULang[0] != SKUName and not found:
+            globals()["SKUIndex"] = SKUIndex + 1
+        else:
+            found = 1
+
+    if not found:
+        print 'Could not find SKU %s' % SKUName
+        return 1
+
+        
+    #retrieve the various arrays
+    languages       = SKULanguages[globals()["SKUIndex"]][1]
+    preBuilders     = SKUPreBuilders[globals()["SKUIndex"]][1]
+    builders        = SKUBuilders[globals()["SKUIndex"]][1]
+    postBuilders    = SKUPostBuilders[globals()["SKUIndex"]][1]
+    installerKeys   = SKUInstallerKeys[globals()["SKUIndex"]][1]
+    
+    
+    #are we permitted to run the pre-builders and builders? ie SKUPostBuildOnly is not set to true
+    if not SKUPostBuildOnly:
+        #preBuilders to build the non-localised game
+        for preBuilder in preBuilders:
+            ret = preBuilder[0](preBuilder[1])
+            if ret:
+                return ret
+            
+        
+        #localisation build and post build
+        for language in languages:
+            globals()["LanguageId"] = language
+            
+            # if the language is english then the global variable 'Language' must be set to 'None' 
+            # as there is no localisation data for english
+            if language == 'English':
+                globals()["Language"] = None
+            else:
+                globals()["Language"] = language
+        
+            for builder in builders:
+                ret = builder[0](builder[1]) or ret   
+                
+        if ret != 0:
+            return ret 
+            
+    else:
+        print 'SKUPostBuildOnly set, skipping prebuilders and builders'
+                  
+        
+    #are the post builders disabled?
+    if not SKUNoPostBuild:
+        
+        for code_and_source in SKUInstallerKeys[globals()["SKUIndex"]][1]:
+    
+            #stash product code and dist src globally
+            globals()["ProductCode"]   = code_and_source[0]
+            globals()["DistribSource"] = code_and_source[1]
+        
+            #build installers/launchers
+            for postBuilder in postBuilders:
+                ret = postBuilder[0](postBuilder[1])
+                if ret:
+                    return ret
+            
+
+    endMark = time.clock()                    
+    
+    elapsedTime = (endMark - startMark) / 60.0
+    
+    print ''
+    print '------------------------------------------------------------------------------------------------'
+    print 'Kingdoms Creation took %f minutes' % elapsedTime
+                                        
+    return 0
+    
+#------------------------------------------------------------------------------
+#Uses the freeware installer (not InstallShiled) for tools (internal only, ie reinstall tools)
+def CreateToolsInstaller():
+    EnsureArtifactsFolder()
+
+    cmd = r'"%s" tools_installer.iss' % InnoSetup
+
+    folder = os.getcwd(); os.chdir(r'.\installers\tools')
+    res = env.Execute(cmd)
+    os.chdir(folder)
+
+    return res
+
+#------------------------------------------------------------------------------
+#SkipBlockCheck is just so the build doesn't tank on mods that don't have settlement data (set in Luntbuild)
+def CheckBlocks():
+    if SkipBlockCheck:
+        return 0
+        
+    EnsureArtifactsFolder()
+
+    log = os.path.join(artifactsDir, 'block-checker.log.txt')
+
+    cmd = r'%sBlockChecker --bc.projectdir=. --bc.dbintegrity --bc.exportFiles --log.to="%s" --log.level="* info"' % (toolsPath, log)
+    res = env.Execute(cmd)
+
+    # save the log
+    if Log2HTML(log, os.path.join(artifactsDir, 'block-checker-log.html'), DataLogFormatting) and FailOnBadBlocks :
+        res = 1
+
+    return res
+
+#------------------------------------------------------------------------------
+    
+def CheckBlocks_Mod():
+    if SkipBlockCheck:
+        return 0
+        
+    EnsureArtifactsFolder()
+
+    log = os.path.join(modArtifactsDir, 'block-checker.log.txt')
+
+    cmd = r'%sBlockChecker --bc.projectdir=%s --bc.dbintegrity --bc.exportFiles --log.to="%s" --log.level="* info"' % (toolsPath, modPath, log)
+    res = env.Execute(cmd)
+
+    # save the log
+    if Log2HTML(log, os.path.join(modArtifactsDir, 'block-checker-log.html'), DataLogFormatting) and FailOnBadBlocks :
+        res = 1
+
+    return res
+
+#------------------------------------------------------------------------------
+#Does a data build and populates cache    
+def DataBuild():
+    EnsureArtifactsFolder()
+
+    log = os.path.join(artifactsDir, 'data-build.log.txt')
+
+    cmd = r'%sProjectConf.exe --backup' % toolsPath
+    env.Execute(cmd)
+
+    #creates a new project config file
+    cmd = r'%sProjectConf.exe --create --dir="%s" --name="%s"' % (toolsPath, os.getcwd(), 'scons-mtw2-build')
+    env.Execute(cmd)
+            
+    #.buildCache builds cache on server but doesn't necessarily check cache
+    #.nocache forces dataConverter to build every asset (used for retail and possibly for clean builds)
+    cmd = r'%sDataConverter.exe --conv.noprompt --conv.buildCache --core.disable_dialogs --conv.verbose --conv.start=Export --log.to="%s" --log.level="* info" --conv.reportDir="%s" ' % (toolsPath, log, artifactsDir)
+    if noCache:
+        cmd = cmd + " --conv.nocache"
+    res = env.Execute(cmd)
+            
+    #restores original project config
+    cmd = r'%sProjectConf.exe --restore' % toolsPath
+    env.Execute(cmd)
+
+    # save the log
+    if Log2HTML(log, os.path.join(artifactsDir, 'data-build-log.html'), DataLogFormatting) :
+        res = 1
+        
+    return res
+       
+#------------------------------------------------------------------------------
+#Same as DataBuild but can remove duplicates  
+def DataBuild_Mod():
+    EnsureArtifactsFolder()
+
+    log = os.path.join(modArtifactsDir, 'data-build.log.txt')
+        
+    cmd = r'%sProjectConf.exe --backup' % toolsPath
+    env.Execute(cmd)
+            
+    cmd = r'%sProjectConf.exe --create --dir="%s\%s" --name="%s"' % (toolsPath, os.getcwd(), modPath, 'scons-mtw2-build-mod-%s' % modName)
+    env.Execute(cmd)
+
+    cmd = r'%sDataConverter.exe --conv.noprompt --conv.buildCache --core.disable_dialogs --conv.verbose --conv.start=%s\Export --log.to="%s" --log.level="* info" --conv.reportDir="%s" ' % (toolsPath, modPath, log, modArtifactsDir)
+    if noCache:
+        cmd = cmd + " --conv.nocache"
+    res = env.Execute(cmd)
+        
+    cmd = r'%sProjectConf.exe --restore' % toolsPath
+    env.Execute(cmd)
+    
+    # save the log
+    if Log2HTML(log, os.path.join(modArtifactsDir, 'data-build-log.html'), DataLogFormatting) :
+        res = 1
+        
+    # remove duplicates?  Base is root data, branch is mod data.
+    if RemoveDuplicates:
+        log = os.path.join(modArtifactsDir, 'data-build-clean.log.txt')
+        cmd = r'%sRemoveDuplicates.exe --base="%s\data" --branch="%s\%s\data" --verbosity=1 >"%s"' % (toolsPath, os.getcwd(), os.getcwd(), modPath, log)
+        res = env.Execute(cmd) 
+
+    return res
+
+#------------------------------------------------------------------------------
+#Same as DataBuild but doesn't build cache and can run low quality    
+def DataConvert(low_quality = 0):
+    EnsureArtifactsFolder()
+
+    log = os.path.join(artifactsDir, 'data-build.log.txt')
+
+    cmd = r'%sProjectConf.exe --backup' % toolsPath
+    env.Execute(cmd)
+    
+    cmd = r'%sProjectConf.exe --create --dir="%s" --name="%s"' % (toolsPath, os.getcwd(), 'scons-mtw2-build')
+    env.Execute(cmd)
+            
+    cmd = r'%sDataConverter.exe --conv.noprompt --core.disable_dialogs --conv.verbose --conv.start=Export --log.to="%s" --log.level="* info" --conv.reportDir="%s" ' % (toolsPath, log, artifactsDir)
+    if low_quality:
+        cmd = cmd + " --conv.lowquality"
+    if noCache:
+        cmd = cmd + " --conv.nocache"
+    res = env.Execute(cmd)
+            
+    cmd = r'%sProjectConf.exe --restore' % toolsPath
+    env.Execute(cmd)
+
+    # save the log
+    if Log2HTML(log, os.path.join(artifactsDir, 'data-build-log.html'), DataLogFormatting) :
+        res = 1
+    return res
+
+#------------------------------------------------------------------------------
+    
+def DataConvert_Mod(low_quality = 0):
+    EnsureArtifactsFolder()
+
+    log = os.path.join(modArtifactsDir, 'data-build.log.txt')
+
+    cmd = r'%sProjectConf.exe --backup' % toolsPath
+    env.Execute(cmd)
+    
+    cmd = r'%sProjectConf.exe --create --dir="%s\%s" --name="%s"' % (toolsPath, os.getcwd(), modPath, 'scons-mtw2-build-mod-%s' % modName)
+    env.Execute(cmd)
+
+    cmd = r'%sDataConverter.exe --conv.noprompt --core.disable_dialogs --conv.verbose --conv.start=%s\Export --log.to="%s" --log.level="* info" --conv.reportDir="%s" ' % (toolsPath, modPath, log, modArtifactsDir)
+    if low_quality:
+        cmd = cmd + " --conv.lowquality"
+    if noCache:
+        cmd = cmd + " --conv.nocache"
+    res = env.Execute(cmd)
+        
+    cmd = r'%sProjectConf.exe --restore' % toolsPath
+    env.Execute(cmd)
+
+    # save the log
+    if Log2HTML(log, os.path.join(modArtifactsDir, 'data-build-log.html'), DataLogFormatting) :
+        res = 1
+        
+    # remove duplicates?
+    if RemoveDuplicates:
+        log = os.path.join(modArtifactsDir, 'data-build-clean.log.txt')
+        cmd = r'%sRemoveDuplicates --base="%s\data" --branch="%s\%s\data" --verbosity=1 >"%s"' % (toolsPath, os.getcwd(), os.getcwd(), modPath, log)
+        res = env.Execute(cmd) 
+
+    return res
+
+#------------------------------------------------------------------------------
+#Obsolete    
+def PublishDataPacks():
+
+    root    = os.path.abspath('.')
+    res = re.compile('(?P<id>.*)-[0-9]*').match(buildVersion)
+    if res :
+        buildName = res.group('id')
+    else:
+        buildName = buildVersion
+    copy2   = '\\\\ZEPPELIN\\DataCache\\'+buildName
+
+    def clear_ro(where) :
+        for path, dirs, files in os.walk(where) :
+            for f in files:
+                os.chmod(os.path.join(path, f), stat.S_IWRITE)
+
+    def clear(what) :
+        clear_ro(what)
+        try:    shutil.rmtree(what, 1)
+        except: return 0
+        return 1
+
+    def clear_old(where) :
+        flist = []
+        for f in os.listdir(where):
+            pathname = os.path.join(where, f)
+            if stat.S_ISDIR(os.stat(pathname)[stat.ST_MODE]):
+                flist.append(f)
+        flist.sort()
+        while len(flist) > 10 :
+            clear(os.path.join(where, flist.pop(0)))
+
+    def do_copy(where) :
+        exts    = ['.dat', '.idx', '.cur', '.ani']
+        folders = ['animations', 'sounds', 'cursors']
+
+        try:
+            for folder in folders :
+                fname = os.path.join(where, 'data', folder)
+                if not os.path.exists(fname):
+                    os.makedirs(fname)
+        except:
+            print 'cannot create destination folders'
+            return 0
+
+        for folder in folders :
+            print 'copying', folder, '...',
+            for path, dirs, files in os.walk(os.path.join(root, 'data', folder)) :
+                for f in files :
+                    (fname, fext) = os.path.splitext(f.lower())
+                    if fext in exts :
+                        f_src = os.path.join(path, f)
+                        f_dst = os.path.join(where, 'data', folder, f)
+                        #print 'copying file ', f_src, 'to', f_dst,
+                        try:
+                            shutil.copyfile(f_src, f_dst)
+                            #print 'ok'
+                        except :
+                            print 'error'
+                            return 0
+            print 'ok'
+        try :
+            print 'copying fmv ...',
+            shutil.copytree(os.path.join(root, 'data', 'fmv'), os.path.join(where, 'data', 'fmv'))
+        except:
+            print 'error'
+            return 0
+        print 'ok'
+        try :
+            print 'copying packs ...',
+            shutil.copytree(os.path.join(root, 'packs'), os.path.join(where, 'packs'))
+        except:
+            print 'error'
+            return 0
+        print 'ok'
+
+        return 1
+
+    if os.path.exists(copy2) :
+        clear_old(copy2)
+
+    if buildNumber :
+        copy2 = copy2 + '\\' + str(buildNumber)
+    else:
+        copy2 = copy2 + r'\unknown'
+
+    if clear(copy2) :
+        if do_copy(copy2) :
+            clear_ro(copy2)
+            return 0
+        else:
+            clear(copy2)
+
+    return 1
+
+def SendEmail(log):
+    temp = 'temp.html'
+    Log2HTML(log,temp,BuildLogFormatting)
+    print "Sending email..."
+    me = 'buildmonkey@creative-assembly.com.au'
+    to = 'callsop@creative-assembly.com.au'
+    f = open(temp)
+    msg = email.message_from_file(f)
+    f.close()
+    msg['Subject'] = 'Build: ' % buildVersion
+    msg['From'] = me
+    msg['To'] = to
+    #msg.preamble = 'testing'
+    msg.epilogue = ''
+    msg.set_type('text/HTML')
+    try:
+        s = smtplib.SMTP()
+        s.set_debuglevel(3)
+        s.connect('santana')
+        s.sendmail(me, to, msg.as_string())
+        s.close()
+    except:
+        print 'error'
+        return 0
+    print 'ok'
+    return 0
+
+def SendEmailTest():
+    SendEmail('build_log.txt')
+    return 0
+
+def PublishBuild():
+
+    build_folder = os.path.join(buildRepository, buildVersion)
+    print "  new build folder: '%s'" % build_folder
+
+    if os.path.exists(build_folder):
+        print "  removing the existing folder..."
+        shutil.rmtree(build_folder)
+
+    shutil.copytree(artifactsDir, build_folder)
+
+    for f in ('build_log.txt', 'revision_log.txt'):
+        log_file = os.path.join(publishDir, f)
+        if (os.path.exists(log_file)):
+            shutil.copyfile(log_file, os.path.join(build_folder, f))
+
+    log_file = os.path.join(publishDir, 'build_log.txt')
+    SendEmail(log_file)
+    return 0
+
+#------------------------------------------------------------------------------
+#Localisation helpers (not mod aware)
+BackupRoot          = r'.\temp\backup'
+LocalizationRoot    = r'localization'
+VoiceRoot           = r'data\sounds\Voice\Human\Localized'
+
+def CleanupFolder(top):
+    print ' '
+    print '============================================='
+    print 'CleanupFolder called, top = %s' % (top)
+    print '============================================='    
+    for root, dirs, files in os.walk(top, topdown=False):
+        for name in files:
+            f = os.path.join(root, name)
+            os.chmod(f, stat.S_IWRITE)
+            os.remove(f)
+        for name in dirs:
+            os.rmdir(os.path.join(root, name))
+
+#------------------------------------------------------------------------------
+            
+def CopyLanguageAssets():
+
+    print ' '
+    print '============================================='
+    print '%s CopyLanguageAssets called, LocalizationRoot = %s' % (Language, LocalizationRoot)
+    print '============================================='             
+    
+    if not Language:
+        print 'called with Language = None (LanguageID = %s), no assets copied' % LanguageId
+        return None
+    
+    language_root = os.path.join(LocalizationRoot, Language)
+        
+    #update language root if building a mod
+    if ModBuild:
+        language_root = os.path.join(modPath, LocalizationRoot)
+        language_root = os.path.join(language_root, Language)
+        
+    print 'language_root = %s' % language_root
+    
+    if not os.path.exists(language_root):
+        print "Language '%s' does not exist!" % Language
+        return None
+    
+    backup_root = os.path.join(BackupRoot, Language)
+    
+    #update backup root if building a mod
+    if ModBuild:
+        backup_root = os.path.join(modPath, backup_root)
+        backup_root = os.path.join(backup_root, Language)
+        
+    if not os.path.exists(backup_root):
+        os.makedirs(backup_root)
+        
+    voice_src = os.path.join(language_root, VoiceRoot)
+    voice_dst = VoiceRoot
+    
+    #update voice root if building a mod
+    if ModBuild:
+        voice_dst = os.path.join(modPath, voice_dst)
+        
+    print 'VoiceSrc = %s' % voice_src
+    print 'VoiceDst = %s' % voice_dst
+
+    assets = {}
+
+    # Special case: we always backup the entire voice folder!
+    if os.path.exists(voice_src):
+        print r"  installing Voice from %s to %s" % (voice_src, voice_dst)
+
+        backup = os.path.join(backup_root, voice_dst)
+
+        if os.path.exists(voice_dst):
+            os.renames(voice_dst, backup)
+        if os.path.exists(voice_src):
+            os.renames(voice_src, voice_dst)
+    else:
+        print r"  WARNING: path %s does not exist" % voice_src
+
+    # scan the language folder and move files into the root
+    for root, dirs, files in os.walk(language_root):
+        if not files:
+            continue
+
+        if not root.startswith(language_root):
+            raise Exception, "can't interpret path %s" % root
+        relative_root = root[len(language_root)+1:]
+
+        for name in files:
+            file = os.path.join(relative_root , name)
+            assets[file] = 1
+
+            original = file
+            if ModBuild:
+                original = os.path.join(modPath, original)
+            
+            backup = os.path.join(backup_root, file)
+            localized = os.path.join(language_root, file)
+            print r"  installing %s to %s" % (localized, original)
+
+            if os.path.exists(original):
+                os.renames(original, backup)
+            os.renames(localized, original)
+
+    return assets
+
+#------------------------------------------------------------------------------
+    
+def RestoreLanguageAssets(assets):
+    if not assets:
+        return
+
+    language_root = os.path.join(LocalizationRoot, Language)
+    
+    #update language root if building a mod
+    if ModBuild:
+        language_root = os.path.join(modPath, LocalizationRoot)
+        language_root = os.path.join(language_root, Language)
+             
+    print ' '
+    print '============================================='
+    print '%s RestoreLanguageAssets called, language_root = %s' % (Language, language_root)
+    print '============================================='              
+    
+    if not os.path.exists(language_root):
+        os.makedirs(language_root)
+
+    backup_root = os.path.join(BackupRoot, Language)
+    
+    #update backup root if building a mod
+    if ModBuild:
+        backup_root = os.path.join(modPath, backup_root)
+        backup_root = os.path.join(backup_root, Language)
+
+    if not os.path.exists(backup_root):
+        raise Exception, "Backup '%s' does not exist!" % backup_root
+        
+    voice_src = os.path.join(language_root, VoiceRoot)
+    voice_dst = VoiceRoot
+    
+    #update voice root if building a mod
+    if ModBuild:
+        voice_dst = os.path.join(modPath, voice_dst)
+
+    # move the voice folder as a whole
+    backup = os.path.join(backup_root, voice_dst)
+    if os.path.exists(backup):
+        print "  restoring Voice from %s to %s" % (backup, voice_dst)
+    
+        os.renames(voice_dst, voice_src)
+        os.renames(backup, voice_dst)
+
+    for file in assets.keys():
+        
+        original = file
+        if ModBuild:
+            original = os.path.join(modPath, original)
+                        
+        backup = os.path.join(backup_root, file)
+        localized = os.path.join(language_root, file)
+        
+        print "  restoring %s to %s" % (backup, original)
+
+        if os.path.exists(original):
+            os.renames(original, localized)
+        if os.path.exists(backup):
+            os.renames(backup, original)
+
+
+def CreateRetailInstall():
+    res = 0
+
+    # prepare the language assets
+    if os.path.exists(BackupRoot):
+        CleanupFolder(BackupRoot)
+
+    assets = None
+
+    try:
+        assets = CopyLanguageAssets()
+
+        # build localized pack files
+        res = PacksLocalized()
+        # create an installer
+        if res == 0:
+            res = CreateRetailInstaller()
+
+    except Exception, ex:
+        print ex
+        res = 1
+
+    # revert to English
+    RestoreLanguageAssets(assets)
+
+    return res
+    
+#------------------------------------------------------------------------------
+# High level targets
+
+watermark = env.Alias('watermark', [], [SubmitWatermark])
+env.AlwaysBuild(watermark)
+
+game = env.Alias('game', GenerateSolutionTargets('game', 'medieval2.sln', GameConfigs))
+env.AlwaysBuild(game)
+
+tools = env.Alias('tools', GenerateSolutionTargets('tools', 'medieval2 tools.sln', ToolsConfigs))
+env.AlwaysBuild(tools)
+
+modTools = env.Alias('modTools', GenerateSolutionTargets('modTools', 'medieval2 tools.sln', ModToolsConfigs, ModToolsProjects))
+env.AlwaysBuild(modTools)
+
+converters = env.Alias('converters', GenerateSolutionTargets('converters', 'medieval2 convert.sln', ToolsConfigs))
+env.AlwaysBuild(converters)
+
+launcher = env.Alias('launcher', GenerateSolutionTargets('launcher', 'Launcher\\Launcher.sln', LauncherConfigs))
+env.AlwaysBuild(launcher)
+
+#code = env.Alias('code', [watermark, game, test, tools, modTools, launcher], [EnsureArtifactsFolder, SaveBuildArtifacts])
+code = env.Alias('code', [watermark, game, tools, modTools], [EnsureArtifactsFolder, SaveBuildArtifacts])
+env.AlwaysBuild(code)
+
+
+check_blocks_fn = CheckBlocks
+if ModBuild:
+    check_blocks_fn = CheckBlocks_Mod
+chkblockset_dep = []
+if not artBuild:
+    chkblockset_dep = ['converters-Release - DLL', 'modTools']
+check_block_set = env.Alias('data-chkblocks', chkblockset_dep, lambda target, source, env : check_blocks_fn())
+env.AlwaysBuild(check_block_set)
+
+data_build_fn = DataBuild
+if ModBuild:
+    data_build_fn = DataBuild_Mod
+data_build = env.Alias('data-build', [check_block_set], lambda target, source, env : data_build_fn())
+env.AlwaysBuild(data_build)
+
+data_convert_fn = DataConvert
+if ModBuild:
+    data_convert_fn = DataConvert_Mod
+data_convert = env.Alias('data-convert', [check_block_set], lambda target, source, env : data_convert_fn(LowQuality))
+env.AlwaysBuild(data_convert)
+
+data_convert_low_quality = env.Alias('data-convert-low-quality', [check_block_set], lambda target, source, env : data_convert_fn(True))
+env.AlwaysBuild(data_convert_low_quality)
+
+packs_game_fn = PacksGame
+if ModBuild:
+    packs_game_fn = PacksGame_Mod
+packs_game = env.Alias('packs-game', [], lambda target, source, env : packs_game_fn())
+env.AlwaysBuild(packs_game)
+
+packs_data_fn = PacksPacker
+if ModBuild:
+    packs_data_fn = PacksPacker_Mod
+packs_data = env.Alias('packs-data', [], lambda target, source, env : packs_data_fn())
+env.AlwaysBuild(packs_data)
+
+packs_localised_fn = PacksLocalized
+if ModBuild:
+    packs_localised_fn = PacksLocalized_Mod
+packs_localized = env.Alias('packs-localized', [], lambda target, source, env : packs_localised_fn())
+env.AlwaysBuild(packs_localized)
+
+packs = env.Alias('packs', [packs_game, packs_data, packs_localized])
+env.AlwaysBuild(packs)
+
+publish_packs = env.Alias('publish-packs', [], lambda target, source, env : PublishDataPacks())
+env.AlwaysBuild(publish_packs)
+
+publish_build = env.Alias('publish-build', [], lambda target, source, env : PublishBuild())
+env.AlwaysBuild(publish_build)
+
+data_target = BuildData and data_build or data_convert
+build = env.Alias('build', [code, data_target, packs])
+env.AlwaysBuild(build)
+
+create_installer_fn = CreateGameInstaller
+if DemoBuild:
+    create_installer_fn = CreateDemoInstaller
+game_installer = env.Alias('installer-game', [], lambda target, source, env : create_installer_fn())
+env.AlwaysBuild(game_installer)
+
+mod_installer = env.Alias('installer-mod', [], lambda target, source, env : CreateModInstaller())
+env.AlwaysBuild(mod_installer)
+
+tools_installer = env.Alias('installer-tools', [], lambda target, source, env : CreateToolsInstaller())
+env.AlwaysBuild(tools_installer)
+
+install = env.Alias('install', [build, game_installer])
+env.AlwaysBuild(install)
+
+artbuild = env.Alias('artbuild', [tools_installer], UpdateArtBuild)
+env.AlwaysBuild(artbuild)
+
+all = env.Alias('all', [install])
+env.AlwaysBuild(all)
+
+retail_build = env.Alias('retail-build', [code, data_target, packs_game, packs_data])
+env.AlwaysBuild(retail_build)
+
+retail_install = env.Alias('retail-install', [], lambda target, source, env : CreateRetailInstall())
+env.AlwaysBuild(retail_install)
+
+retail_patch1 = env.Alias('retail-patch1', [], lambda target, source, env : CreateRetailPatch1())
+env.AlwaysBuild(retail_patch1)
+
+retail_update2_install = env.Alias('retail-update2-install', [], lambda target, source, env : CreateRetailUpdate2Install())
+env.AlwaysBuild(retail_update2_install)
+
+kingdoms_SKUs = env.Alias('kingdomsSKU', [], lambda target, source, env : CreateKingdomsSKU())
+env.AlwaysBuild(kingdoms_SKUs)
+
+code_test = env.Alias('codeTest', [], lambda target, source, env : CodeTest())
+env.AlwaysBuild(code_test)
+
+env.Default(tools)
+env.Default(code)
+env.Default(modTools)
+
+testme = env.Alias('testme', [], lambda target, source, env : SendEmailTest())
+env.AlwaysBuild(testme)
+
+#------------------------------------------------------------------------------

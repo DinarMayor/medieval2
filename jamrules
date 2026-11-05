@@ -1,0 +1,486 @@
+###################################################################################################
+# Jamrules
+# Written by Craig Allsop
+# Copyright 2005 Creative Assembly International Limited
+###################################################################################################
+
+###################################################################################################
+# Global Definitions
+###################################################################################################
+
+SPLIT			= 1 ;
+
+DEBUG_SUBINCLUDE	= ;
+
+SPACE			= " " ;
+NEWLINE			= "
+" ;
+
+SED			= [ FDirName $(TOP) bin sed.exe ] ;
+CAT			= [ FDirName $(TOP) bin cat.exe ] ;
+GREP			= [ FDirName $(TOP) bin grep.exe ] ;
+SORT			= [ FDirName $(TOP) bin sort.exe ] ;
+
+DIREXTLIB 		= [ FDirName $(TOP) external lib ] ;
+DIREXTINCLUDE 		= [ FDirName $(TOP) external include ] ;
+
+###################################################################################################
+# Compiling Setup
+###################################################################################################
+
+MSVCNT			= "C:\\Program Files\\Microsoft Visual Studio .NET 2003\\Vc7" ;
+
+LINKLIBS		= $(MSVCNT)\\lib\\libc.lib
+			  $(MSVCNT)\\lib\\oldnames.lib
+			  $(MSVCNT)\\lib\\kernel32.lib ;
+
+STDHDRS			= $(MSVCNT)\\include ;
+
+SETUP			= LINK C++ CC ;
+
+$(SETUP)SETUP 		= "call \"$(MSVCNT)\\bin\\vcvars32.bat\" >nul" ;
+
+actions Cc
+{
+	$(CCSETUP)
+	$(CC) /c /Fo"$(<)" $(CCFLAGS) $(CCDEFS) $(CCHDRS) /I"$(STDHDRS)" "$(>)"
+}
+
+actions C++
+{
+	$(C++SETUP)
+	$(C++) /c /Fo"$(<)" $(C++FLAGS) $(CCDEFS) $(CCHDRS) /I"$(STDHDRS)" /Tp"$(>)"
+}
+
+actions Link bind NEEDLIBS
+{
+	$(LINKSETUP)
+	$(LINK) $(LINKFLAGS) /out:"$(<)" $(UNDEFS) "$(>)" "$(NEEDLIBS)" "$(LINKLIBS)"
+}
+
+rule Link
+{
+	LINKFLAGS on $(<) += $(SUBDIRLINKFLAGS) ;
+	MODE on $(<) = $(EXEMODE) ;
+	Chmod $(<) ;
+}
+
+rule FDefines
+{
+	return /D$(SPACE)\"$(<)\" ;
+}
+
+rule SubDirDefines
+{
+	DEFINES = $(<) ;
+}
+
+rule SubDirLinkFlags
+{
+	SUBDIRLINKFLAGS += $(<) ;
+}
+
+rule SubDir2
+{
+	DEFINES = ;
+}
+
+actions piecemeal together existing maxline 4096 Clean
+{
+        $(RM) "$(>)"
+}
+
+SUBDIRRULES += SubDir2 ;
+
+###################################################################################################
+# Utility Rules
+#
+# BulkRule <rule> : <sources>			Execute rule on a bunch of sources.
+# Duplicate <things>				As Unique, but echoes duplicates.
+# EchoVar <vars>				Displays values for vars for debugging.
+# Exclude <this> : <that> 			Excludes this from that, returns result.
+# Exists <fullpath>				Returns true if fullpath exists.
+# Expand <wildcards>				Returns list of expanded wildcards.
+# Help <text>					Add help text for "jam help".
+# Join <output> : <inputs>			Concatinates inputs into one output.
+# Piecemeal <rule> : <target> : <sources>	Execute action rule piecemeal on target. Rule1, Rule2
+# ResponseFile <file> : <sources>		Dump sources into response file.
+# SubDirSearchSource <dirs>			Add search paths for locating sources.
+# SubIncludeOnce <base> : <dirs>		Includes a bunch of dirs using base. (in tokens)
+# SubIncludeOnce <dir>				Includes dir. (in tokens)
+# Unique <things>				Returns unique list removing duplicates.
+#
+###################################################################################################
+
+rule Reverse
+{
+	local result ;
+	for i in $(<)
+	{
+		result = $(i) $(result) ;
+	}
+	return $(result) ;
+}
+
+rule Unique
+{
+	local result f ;
+
+  	for f in $(<)
+  	{
+    		if ! $(f) in $(result)
+    		{
+      			result += $(f) ;
+    		}
+  	}
+  	return $(result) ;
+}
+
+rule Duplicate
+{
+	local result f ;
+
+  	for f in $(<)
+  	{
+    		if ! $(f) in $(result)
+    		{
+      			result += $(f) ;
+    		}
+		else
+		{
+			Echo Duplicate: $(f) ;
+		}
+  	}
+  	return $(result) ;
+}
+
+rule Exists
+{
+	if ! $($(<)-EXISTS)
+	{
+		if [ Glob $(<:P) : $(<:BS) ]
+		{
+			$(<)-EXISTSRESULT = 1 ;
+		}
+
+		$(<)-EXISTS = 1 ;
+	}
+
+	return $($(<)-EXISTSRESULT) ;
+}
+
+rule Exclude
+{
+	local i result ;
+	for i in $(2)
+	{
+		if ! ( $(i) in $(1) )
+		{
+			result += $(i) ;
+		}
+	}
+	return $(result) ;
+}
+
+rule EchoVar
+{
+	local __i ;
+	for __i in $(1)
+	{
+		echo $(__i) "=" [$($(__i))] ;
+	}
+}
+
+rule SubIncludeOnce
+{
+	local here dir grist i ;
+
+	for i in $(2:E=)
+	{
+		if $(i)
+		{
+			here = $(1[2-]) $(i) ;
+		}
+		else
+		{
+			here = $(1[2-]) ;
+		}
+
+		grist = [ FGrist $(here) ] ;
+		dir = subdir ;
+		dir = $(dir:G=$(grist)) ;
+
+		if ! $($(dir))
+		{
+			$(dir) = 1 ;
+			if $(DEBUG_SUBINCLUDE)
+			{
+				echo Including $(1[1]) $(here) ;
+			}
+			SubInclude $(1[1]) $(here) ;
+		}
+		else
+		{
+			if $(DEBUG_SUBINCLUDE)
+			{
+				echo $(1[1]) $(here) already included. ;
+			}
+		}
+	}
+}
+
+rule BulkRule
+{
+	local i ;
+
+	for i in $(2)
+	{
+		$(1) $(i) ;
+	}
+}
+
+rule Expand
+{
+	local i result ;
+	local j = $(<) ;
+
+	for i in $(j)
+	{
+		if [ Match (.*)\\*(.*) : $(i) ]
+		{
+			file = $(i:BS) ;
+			if $(i:P)
+			{
+				result += [ Glob [ FDirName $(SUBDIR) $(i:P) ] : $(i:BS) ] ;
+			}
+			else
+			{
+				result += [ Glob $(SUBDIR) : $(i:BS) ] ;
+			}
+		}
+		else
+		{
+			result += $(i) ;
+		}
+	}
+
+	return $(result) ;
+}
+
+rule Piecemeal
+{
+	$(1)1 $(2) ;
+	$(1)2 $(2) : $(3) ;
+	Depends $(2) : $(3) ;
+}
+
+rule SubDirSearchSource1
+{
+	SEARCH_SOURCE += [ FDirName $(SUBDIR) $(<) ] ;
+}
+
+rule SubDirSearchSource
+{
+	BulkRule SubDirSearchSource1 : $(<) ;
+}
+
+rule Help
+{
+	Depends help : $(<) ;
+	NotFile help ;
+	Always help ;
+}
+
+actions quietly Help
+{
+	echo ... $(<)
+}
+
+rule ResponseFile
+{
+	Temporary $(<) ;
+	Depends $(<) : $(>) ;
+	Clean clean : $(<) ;
+	if $(>[1])
+	{
+		ResponseFile1 $(<) : $(>[1]) ;
+	}
+	if $(>[2-)
+	{
+		ResponseFile2 $(<) : $(>[2-]) ;
+	}
+
+}
+
+actions quietly ResponseFile1
+{
+  	echo "$(>)" > "$(<)"
+}
+
+actions quietly piecemeal ResponseFile2
+{
+  	echo "$(>)" >> "$(<)"
+}
+
+rule Join
+{
+	Depends $(<) : $(>) ;
+	Join1 $(<) : $(>) ;
+	Join2 $(<) : $(>) ;
+}
+
+actions together Join1
+{
+  	if exist "$(<)" $(RM) "$(<)"
+}
+
+actions together piecemeal quietly maxline 1024 Join2
+{
+ 	$(CAT) "$(>)" >> "$(<)"
+}
+
+rule SplitGrist
+{
+	local result split ;
+
+	switch $(<)
+	{
+		case <*> : result += [ SplitGrist [ Match <(.*)> : $(<) ] ] ;
+		case *!* : split = [ Match (.*)!(.*) : $(<) ] ;
+			   result += [ SplitGrist $(split[1]) ] $(split[2-]) ;
+		case *   : result += $(<) ;
+	}
+	return $(result) ;
+}
+
+rule SplitPath
+{
+	local tokens result ;
+
+	switch $(<)
+	{
+		case */* : tokens = [ Match (.*)/(.*) : $(<) ] ;
+			   result += [ SplitPath $(tokens[1]) ] $(tokens[2-) ;
+		case * : result += $(<) ;
+	}
+	return $(result) ;
+}
+
+
+
+###################################################################################################
+# Sound Rules
+###################################################################################################
+
+SOX = [ FDirName $(TOP) util sox sox.exe ] ;
+LAME = [ FDirName $(TOP) util lame lame.exe ] ;
+CONVERT_SOUND = $(CP) ;
+
+actions MakeWav
+{
+	$(SOX) $(>) -i $(<)
+}
+
+rule MakeMp3
+{
+	Depends $(<) : $(>) ;
+}
+
+actions MakeMp3
+{
+	$(CONVERT_SOUND) $(SOUNDFLAGS) $(>) $(<)
+}
+
+actions MakeSound
+{
+	$(CP) $(>) $(<)
+}
+
+rule LameFlags
+{
+	local SOURCE_GRIST = [ FGrist demo $(SUBDIR_TOKENS) $(path) ] ;
+	SOUNDFLAGS on [ FGristFiles $(<) ] = $(>) ;
+	CONVERT_SOUND on [ FGristFiles $(<) ] = $(LAME) --quiet -h ;
+}
+
+rule Sound
+{
+	NotFile demo ;
+	local tokens = [ SplitPath $(<) ] ;
+	local reverse = [ Reverse $(tokens) ] ;
+	local file = $(reverse[1]) ;
+	local path = [ Reverse $(reverse[2-]) ] ;
+	local SOURCE_GRIST = [ FGrist $(SUBDIR_TOKENS) $(path) ] ;
+	local source = [ FGristFiles $(file) ] ;
+	SEARCH on $(source) = [ FDirName $(TOP) $(SUBDIR_TOKENS) $(path) ] ;
+
+	{
+		local SOURCE_GRIST = [ FGrist demo $(SUBDIR_TOKENS) $(path) ] ;
+		local LOCATE_TARGET = [ FDirName [ FSubDirPath TOP demo $(SUBDIR_TOKENS) $(path) ] ] ;
+		local dest = [ FGristFiles $(file) ] ;
+		switch $(file:S)
+		{
+			case .wav : MakeWav $(dest) : $(source) ;
+			case .Wav : MakeWav $(dest) : $(source) ;
+			case .WAV : MakeWav $(dest) : $(source) ;
+			case .mp3 : MakeMp3 $(dest) : $(source) ;
+			case .MP3 : MakeMp3 $(dest) : $(source) ;
+			case * : MakeSound $(dest) : $(source) ;
+		}
+
+		Depends $(dest) : $(source) ;
+		MakeLocate $(dest) : $(LOCATE_TARGET) ;
+		Clean clean : $(dest) ;
+		Depends demo : $(dest) ;
+	}
+}
+
+rule Sounds
+{
+	local i ;
+	for i in $(<)
+	{
+		Sound $(i) ;
+	}
+}
+
+
+TEXCONV = [ FDirName $(TOP) bin utils texconv.exe ] ;
+
+rule MakeDDS
+{
+        MakeLocate $(<) : $(LOCATE_SOURCE) ;
+        SEARCH on $(>) = $(SEARCH_SOURCE) ;
+        Depends $(<) : $(>) ;
+        Depends dds : $(<) ;
+        Clean cleandds : $(<) ;
+}
+
+actions MakeDDS
+{
+        $(TEXCONV) "$(>)" "temp$(<)"
+}
+
+rule MakeDDSs
+{
+        local i ;
+
+        for i in [ FGristFiles $(<) ]
+        {
+                MakeDDS $(i).dds : $(i) ;
+        }
+
+        Depends clean : cleandds ;
+        NotFile dds ;
+        Always dds ;
+}
+
+rule ConvertTextures
+{
+        local SUBDIR_TOKENS = $(SUBDIR_TOKENS) ;
+
+        SubDir TOP $(SUBDIR_TOKENS) $(<) ;
+
+        local TEXTURES = [ Glob $(SUBDIR) : *.tga ] ;
+        MakeDDSs $(TEXTURES:BS) ;
+}

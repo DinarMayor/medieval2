@@ -1,0 +1,40 @@
+"InstallScript"
+{
+	"Registry"
+	{
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War"
+		{
+			"string"
+			{
+				"Language"				"english"
+				"DistributionSource"	"steam"
+				"Version"				"1.03.000"
+				"AppPath"				"%INSTALLDIR%"
+			}
+		}
+		
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War\\1.00.0000"
+		{
+		}
+		
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War\\1.02.000"
+		{
+		}
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War\\1.02.001"
+		{
+		}
+		"HKEY_LOCAL_MACHINE\\SOFTWARE\\SEGA\\Medieval II Total War\\1.03.000"
+		{
+		}
+	}
+
+	"Run Process"
+	{
+		"DXSetup"
+		{
+			"HasRunKey"			"HKEY_CURRENT_USER\\Software\\Valve\\Steam\\Apps\\4700"
+			"process 1"			"%INSTALLDIR%\\dxsetup\\DXSETUP.exe"
+			"NoCleanUp"			"1"
+		}
+	}
+}
